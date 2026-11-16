@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Focus widget digits, sized from code (Android 12+): two stacked crop windows over a
+     heavy (Black weight) countdown with tabular digits, so minutes sit over seconds (or hours over minutes) and fill the height.
+     When the timer isn't running, plain text shows the exact time instead (e.g. 25 / 00). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center_horizontal"
+    android:orientation="vertical">
+    <FrameLayout
+        android:id="@+id/frame_top"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:layout_gravity="center_horizontal"
+        android:clipChildren="true">
+        <Chronometer
+            android:id="@+id/chrono_top"
+            android:layout_width="300dp"
+            android:layout_height="80dp"
+            android:fontFamily="sans-serif-black"
+            android:fontFeatureSettings="tnum"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:gravity="start|center_vertical"
+            android:textColor="@color/widget_timer_text"
+            android:textSize="50dp" />
+        <TextView
+            android:id="@+id/static_top"
+            android:layout_width="300dp"
+            android:layout_height="80dp"
+            android:fontFamily="sans-serif-black"
+            android:fontFeatureSettings="tnum"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:gravity="start|center_vertical"
+            android:textColor="@color/widget_timer_text"
+            android:textSize="50dp" />
+    </FrameLayout>
+    <FrameLayout
+        android:id="@+id/frame_bottom"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:layout_gravity="center_horizontal"
+        android:clipChildren="true">
+        <Chronometer
+            android:id="@+id/chrono_bottom"
+            android:layout_width="300dp"
+            android:layout_height="80dp"
+            android:fontFamily="sans-serif-black"
+            android:fontFeatureSettings="tnum"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:gravity="start|center_vertical"
+            android:textColor="@color/widget_timer_text"
+            android:textSize="50dp" />
+        <TextView
+            android:id="@+id/static_bottom"
+            android:layout_width="300dp"
+            android:layout_height="80dp"
+            android:fontFamily="sans-serif-black"
+            android:fontFeatureSettings="tnum"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:gravity="start|center_vertical"
+            android:textColor="@color/widget_timer_text"
+            android:textSize="50dp" />
+    </FrameLayout>
+</LinearLayout>

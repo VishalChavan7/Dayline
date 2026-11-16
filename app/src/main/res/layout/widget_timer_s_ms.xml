@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Focus widget countdown, 40dp digits, minutes over seconds. Generated. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+    <FrameLayout
+        android:layout_width="47.3dp"
+        android:layout_height="wrap_content">
+        <Chronometer
+            android:id="@+id/chrono_top"
+            android:layout_width="192.0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-0.0dp"
+            android:fontFamily="monospace"
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:gravity="start"
+            android:textColor="@color/widget_timer_text"
+            android:textSize="40dp" />
+    </FrameLayout>
+    <FrameLayout
+        android:layout_width="47.3dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="-4.0dp">
+        <Chronometer
+            android:id="@+id/chrono_bottom"
+            android:layout_width="192.0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-72.0dp"
+            android:fontFamily="monospace"
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:gravity="start"
+            android:textColor="@color/widget_timer_text"
+            android:textSize="40dp" />
+    </FrameLayout>
+</LinearLayout>

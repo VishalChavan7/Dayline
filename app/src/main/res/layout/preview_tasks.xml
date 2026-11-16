@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget picker preview (Android 12+), drawn in your wallpaper colours. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@drawable/preview_card" android:padding="16dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Monday" android:textSize="20sp" android:textColor="@color/preview_on" android:maxLines="1" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Nov 16 · 3 tasks" android:textSize="12sp" android:textColor="@color/preview_muted" android:maxLines="1" />
+        </LinearLayout>
+        <FrameLayout android:layout_width="40dp" android:layout_height="40dp" android:background="@drawable/preview_box_container">
+            <ImageView android:layout_width="22dp" android:layout_height="22dp" android:layout_gravity="center" android:src="@drawable/ic_w_add" android:tint="@color/preview_on_container" />
+        </FrameLayout>
+    </LinearLayout>
+    <FrameLayout android:layout_width="1dp" android:layout_height="8dp" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="vertical">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal" android:gravity="center_vertical">
+            <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_w_circle" android:tint="@color/preview_primary" />
+            <FrameLayout android:layout_width="12dp" android:layout_height="1dp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Call the dentist" android:textSize="14sp" android:textColor="@color/preview_on" android:maxLines="1" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal" android:gravity="center_vertical">
+            <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_w_circle" android:tint="@color/preview_primary" />
+            <FrameLayout android:layout_width="12dp" android:layout_height="1dp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Plan the week" android:textSize="14sp" android:textColor="@color/preview_on" android:maxLines="1" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal" android:gravity="center_vertical">
+            <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_w_circle" android:tint="@color/preview_primary" />
+            <FrameLayout android:layout_width="12dp" android:layout_height="1dp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Buy flowers" android:textSize="14sp" android:textColor="@color/preview_on" android:maxLines="1" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

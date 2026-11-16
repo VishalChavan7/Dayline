@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget picker preview (Android 12+), drawn in your wallpaper colours. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:background="@drawable/preview_card" android:padding="12dp">
+    <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="6" android:orientation="vertical" android:gravity="center">
+        <TextView android:layout_width="wrap_content" android:layout_height="0dp" android:layout_weight="1" android:gravity="center" android:text="25" android:textSize="56sp" android:includeFontPadding="false" android:fontFamily="sans-serif-black" android:textColor="@color/preview_primary" />
+        <TextView android:layout_width="wrap_content" android:layout_height="0dp" android:layout_weight="1" android:gravity="center" android:text="00" android:textSize="56sp" android:includeFontPadding="false" android:fontFamily="sans-serif-black" android:textColor="@color/preview_primary" />
+    </LinearLayout>
+    <FrameLayout android:layout_width="8dp" android:layout_height="1dp" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="4" android:orientation="vertical">
+        <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="@drawable/preview_box_primary">
+            <ImageView android:layout_width="30dp" android:layout_height="30dp" android:layout_gravity="center" android:src="@drawable/ic_w_play" android:tint="@color/preview_on_primary" />
+        </FrameLayout>
+        <FrameLayout android:layout_width="1dp" android:layout_height="8dp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
+            <FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@drawable/preview_box_container">
+                <ImageView android:layout_width="22dp" android:layout_height="22dp" android:layout_gravity="center" android:src="@drawable/ic_w_reset" android:tint="@color/preview_on_container" />
+            </FrameLayout>
+            <FrameLayout android:layout_width="8dp" android:layout_height="1dp" />
+            <FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@drawable/preview_box_container">
+                <ImageView android:layout_width="22dp" android:layout_height="22dp" android:layout_gravity="center" android:src="@drawable/ic_w_skip" android:tint="@color/preview_on_container" />
+            </FrameLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

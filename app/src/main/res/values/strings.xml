@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">Dayline</string>
+    <string name="widget_tasks_name">Today\'s tasks</string>
+    <string name="widget_tasks_desc">Your overdue and today\'s tasks. Tick them off from the home screen.</string>
+    <string name="widget_habits_name">Habit streaks</string>
+    <string name="widget_habits_desc">Your best streak and today\'s habit check-ins.</string>
+    <string name="widget_focus_name">Focus timer</string>
+    <string name="widget_focus_desc">Start, pause and follow your focus session.</string>
+    <string name="widget_progress_name">Daily progress</string>
+    <string name="widget_progress_desc">How much of today is done, at a glance.</string>
+    <string name="widget_quickadd_name">Quick add</string>
+    <string name="widget_quickadd_desc">One tap to add a new task.</string>
+    <string name="widget_day_cookie_name">Day cookie</string>
+    <string name="widget_day_cookie_desc">Today\'s progress in a scalloped Material shape.</string>
+    <string name="widget_next_up_name">Next up</string>
+    <string name="widget_next_up_desc">Your next task in a pill. Tick it off right there.</string>
+    <string name="widget_habit_flower_name">Streak flower</string>
+    <string name="widget_habit_flower_desc">Your best habit streak and today\'s check-ins.</string>
+    <string name="widget_focus_burst_name">Focus burst</string>
+    <string name="widget_focus_burst_desc">Minutes focused today, with a start button.</string>
+    <string name="widget_date_clover_name">Date clover</string>
+    <string name="widget_date_clover_desc">Today\'s date and how many tasks are on it.</string>
+</resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget picker preview (Android 12+), drawn in your wallpaper colours. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:gravity="center_vertical" android:background="@drawable/preview_pill_container" android:paddingStart="8dp" android:paddingEnd="16dp">
+    <FrameLayout android:layout_width="44dp" android:layout_height="44dp" android:background="@drawable/preview_dot_primary">
+        <ImageView android:layout_width="22dp" android:layout_height="22dp" android:layout_gravity="center" android:src="@drawable/ic_w_circle" android:tint="@color/preview_on_primary" />
+    </FrameLayout>
+    <FrameLayout android:layout_width="12dp" android:layout_height="1dp" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Next up · 3:00 PM" android:textSize="12sp" android:textColor="@color/preview_on_container" android:maxLines="1" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Call the dentist" android:textSize="16sp" android:textColor="@color/preview_on_container" android:maxLines="1" android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

@@ -1,0 +1,12 @@
+<resources>
+    <color name="widget_timer_text">#BAC3FF</color>
+    <color name="splash_bg">#BAC3FF</color>
+    <color name="splash_fg">#1B2678</color>
+    <color name="preview_bg">#1B1B21</color>
+    <color name="preview_on">#E4E1E9</color>
+    <color name="preview_muted">#C6C5D0</color>
+    <color name="preview_primary">#BAC3FF</color>
+    <color name="preview_on_primary">#1B2678</color>
+    <color name="preview_container">#36429B</color>
+    <color name="preview_on_container">#DFE0FF</color>
+</resources>
