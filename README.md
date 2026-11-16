@@ -15,17 +15,20 @@
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203%20Expressive-4285F4?logo=jetpackcompose&logoColor=white">
   <img alt="Offline first" src="https://img.shields.io/badge/offline-first-1757D0">
   <img alt="No ads, no tracking" src="https://img.shields.io/badge/ads%20%26%20tracking-none-555">
+  <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/VishalChavan7/Dayline?label=download&color=1757D0"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="CONTRIBUTING.md"><img alt="Contributions welcome" src="https://img.shields.io/badge/contributions-welcome-brightgreen"></a>
 </p>
 
 ---
 
 ## Demo
 
-<p align="center">
-  <img src="docs/demo.gif" alt="Dayline demo: Today, quick capture, calendar, habits, notes and dark mode" width="720">
-</p>
+https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
 
-<p align="center"><a href="docs/demo.mp4">▶ Watch the full-quality video (MP4, 28 s)</a></p>
+## Download
+
+Get the latest APK from **[Releases](https://github.com/VishalChavan7/Dayline/releases/latest)**, open it on your phone and allow installing from your browser or file manager when Android asks. Dayline runs on Android 8.0 and newer.
 
 ## Why Dayline
 
@@ -155,9 +158,19 @@ In Android Studio: **File → Open**, choose this folder, wait for Gradle sync, 
 ### Google sync (developer setup)
 Sync needs a one-time Google Cloud setup: enable the **Google Drive API**, configure the OAuth consent screen with the `drive.appdata` scope, and add an **Android OAuth client** for `com.dayline.app` with your signing key's SHA-1. Every build writes that SHA-1 to `outputs/google-sync-setup.txt`. Users then connect with one tap in **Settings → Google sync**.
 
+## Contributing
+
+Contributions are welcome, whether that's a bug report, an idea, a translation, a design tweak or code.
+
+1. Look through [open issues](https://github.com/VishalChavan7/Dayline/issues) or open a new one to discuss your idea.
+2. Fork the repo, create a branch, make your change, and run `./gradlew :app:testDebugUnitTest`.
+3. Open a pull request with a short description and, for UI changes, before and after screenshots.
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide, code style and project conventions.
+
 ## License
 
-The bundled Google Sans Flex font is licensed under the [SIL Open Font License](FONT_LICENSE_OFL.txt).
+Dayline is released under the **[MIT License](LICENSE)**. The bundled Google Sans Flex font is licensed separately under the [SIL Open Font License](FONT_LICENSE_OFL.txt).
 
 ---
 
