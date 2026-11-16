@@ -1,0 +1,38 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect to see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Habits
+        2. Tap + on "Drink water"
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      placeholder: e.g. Galaxy S25, Android 16
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Dayline version
+      description: Settings → About, or the release you installed.
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or screen recording
+      description: Drag images or videos here if they help explain the problem.
