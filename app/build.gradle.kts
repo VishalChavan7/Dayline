@@ -23,7 +23,7 @@ android {
         // screen never keep a cached icon or label from an earlier install.
         val buildStamp = ((System.currentTimeMillis() - 1_767_225_600_000L) / 60_000L).toInt().coerceAtLeast(2)
         versionCode = buildStamp
-        versionName = "1.0.$buildStamp"
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
