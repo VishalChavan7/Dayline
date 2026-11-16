@@ -100,8 +100,12 @@ fun DaylineTheme(
             motionScheme = MotionScheme.expressive(),
             shapes = DaylineShapes,
             typography = DaylineTypography,
-            content = content,
-        )
+        ) {
+            // Text outside a Surface/Scaffold (onboarding, the launch intro, overlays, dialogs drawn in a
+            // plain Box) otherwise inherits Compose's default content colour, which is black and becomes
+            // unreadable in dark theme. Every screen starts from the theme's on-surface colour instead.
+            CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides scheme.onSurface, content = content)
+        }
     }
 }
 
