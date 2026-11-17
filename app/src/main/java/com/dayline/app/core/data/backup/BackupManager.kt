@@ -139,14 +139,14 @@ class BackupManager @Inject constructor(
     }
 
     /** Replaces all data with the backup's contents. */
-    suspend fun importJson(json: String): BackupSummary = withContext(Dispatchers.IO) {
+    suspend fun importJson(json: String, keepSafetyCopy: Boolean = true): BackupSummary = withContext(Dispatchers.IO) {
         val root = parseRoot(json)
         // Parse everything first so a malformed file can't leave the database half-restored.
         val data = try { parse(root) } catch (e: BackupFormatException) { throw e } catch (e: Exception) {
             throw BackupFormatException("The backup is damaged: ${e.message}")
         }
         // Safety copy of the current data.
-        runCatching { File(context.filesDir, "pre-restore-backup.json").writeText(exportJson()) }
+        if (keepSafetyCopy) runCatching { File(context.filesDir, "pre-restore-backup.json").writeText(exportJson()) }
 
         db.withTransaction {
             db.clearAllTablesInTransaction()

@@ -7,12 +7,12 @@ struct CheckCircle: View {
     var size: CGFloat = 18
     var body: some View {
         ZStack {
-            Circle().strokeBorder(color, lineWidth: 1.6)
-                .background(Circle().fill(done ? color : color.opacity(0.08)))
-            if done { Image(systemName: "checkmark").font(.system(size: size * 0.52, weight: .bold)).foregroundStyle(.white) }
+            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).strokeBorder(color, lineWidth: 1.6)
+                .background(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(done ? color : color.opacity(0.08)))
+            if done { Image(systemName: "checkmark").font(.system(size: size * 0.55, weight: .heavy)).foregroundStyle(.white) }
         }
         .frame(width: size, height: size)
-        .contentShape(Circle())
+        .contentShape(Rectangle())
         .animation(.snappy(duration: 0.2), value: done)
     }
 }
@@ -24,32 +24,43 @@ struct TaskRow: View {
     var showProject = true
     var showDate = true
 
+    @State private var hovering = false
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Button { complete() } label: { CheckCircle(done: task.isCompleted, color: task.priority.color) }
                 .buttonStyle(.plain)
-                .padding(.top, 1)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 .help(task.isCompleted ? "Mark as not done" : "Complete")
                 .accessibilityLabel(task.isCompleted ? "Completed" : "Complete \(task.title)")
             VStack(alignment: .leading, spacing: 3) {
                 Text(task.title)
+                    .font(.system(size: 13.5, weight: .medium))
                     .strikethrough(task.isCompleted, color: .secondary)
                     .foregroundStyle(task.isCompleted ? .secondary : .primary)
                     .lineLimit(2)
                 meta
             }
-            Spacer(minLength: 4)
-            if task.priority >= .HIGH && !task.isCompleted {
-                Image(systemName: task.priority.symbol).font(.caption.weight(.bold)).foregroundStyle(task.priority.color)
-                    .help("\(task.priority.label) priority")
+            Spacer(minLength: 6)
+            if showDate, let due = dueText {
+                Text(due).font(.system(size: 12, weight: .medium)).foregroundStyle(dueColor).lineLimit(1)
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         .contextMenu { TaskMenu(task: task) }
         .draggable(TaskDragItem(id: task.id)) {
             Text(task.title).padding(6).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
         }
+    }
+
+    var dueText: String? { Formats(store: store).due(task) }
+    var dueColor: Color {
+        guard let d = task.scheduledDate, !task.isCompleted else { return .secondary }
+        if d < store.today { return StatusColor.overdue }
+        if d == store.today { return .accentColor }
+        return .secondary
     }
 
     func complete() {
@@ -61,13 +72,9 @@ struct TaskRow: View {
     }
 
     @ViewBuilder var meta: some View {
-        let f = Formats(store: store)
         let subs = store.subtasks(of: task.id)
         let tags = store.tags(of: task.id)
         let items: [AnyView] = [
-            showDate ? f.due(task).map { text in
-                AnyView(Label(text, systemImage: "calendar").foregroundStyle(task.isOverdue(store.today) ? StatusColor.overdue : .secondary))
-            } : nil,
             task.recurrence != nil ? AnyView(Image(systemName: "repeat").foregroundStyle(.secondary).help(task.recurrence!.describe())) : nil,
             !store.reminders(of: task.id).isEmpty && !task.isCompleted ? AnyView(Image(systemName: "bell").foregroundStyle(.secondary)) : nil,
             subs.isEmpty ? nil : AnyView(Label("\(subs.filter(\.isDone).count)/\(subs.count)", systemImage: "checklist").foregroundStyle(.secondary)),
@@ -162,9 +169,9 @@ struct QuickAddField: View {
                 .onSubmit(add)
             if let hint { Text(hint).font(.caption).foregroundStyle(.secondary).transition(.opacity) }
         }
-        .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(focused ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.08)))
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .glass(Radius.inner + 4, tint: focused ? .accentColor : nil)
+        .overlay(RoundedRectangle(cornerRadius: Radius.inner + 4, style: .continuous).strokeBorder(focused ? Color.accentColor.opacity(0.55) : .clear, lineWidth: 1.5))
     }
 
     var hint: String? {
@@ -195,6 +202,8 @@ struct TaskSection: View {
                 ForEach(tasks) { t in TaskRow(task: t, showProject: showProject, showDate: showDate).tag(t.id) }
             } header: {
                 SectionHeader(title: title, count: tasks.count, color: color)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .padding(.top, 6)
             }
         }
     }
@@ -214,11 +223,11 @@ struct TaskScreen<Header: View, Sections: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                header
+            VStack(alignment: .leading, spacing: 14) {
+                if Header.self == EmptyView.self { ScreenTitle(title: title, subtitle: subtitle) } else { header }
                 if let quickAdd { quickAdd }
             }
-            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 8)
+            .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 10)
             if isEmpty {
                 empty
             } else {
@@ -229,6 +238,7 @@ struct TaskScreen<Header: View, Sections: View>: View {
                         if let id = ids.first { nav.open(id) }
                     }
                     .onDeleteCommand { if let id = nav.selectedTask { deleteTask(store, nav, id) } }
+                    .padding(.horizontal, 8)
             }
         }
         .navigationTitle(title)

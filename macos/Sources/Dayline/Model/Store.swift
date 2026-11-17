@@ -58,6 +58,7 @@ final class Store: ObservableObject {
 
     /// Replaces everything (restore from a file, or a newer copy from Google Drive). A safety copy is kept first.
     func replaceAll(with new: DaylineData, keepSafetyCopy: Bool = true) {
+        guard new != data else { return }
         if keepSafetyCopy {
             try? BackupCodec.encode(data).write(to: Store.supportDirectory.appendingPathComponent("pre-restore-backup.json"), options: .atomic)
         }

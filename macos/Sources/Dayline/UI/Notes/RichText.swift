@@ -4,7 +4,7 @@ import DaylineCore
 
 /// Converts between the phone's note HTML (<p>, <h1>, <h2>, <b>, <i>, <u>, <s>, <ul>/<ol>/<li>, <br>) and NSAttributedString.
 enum NoteHTML {
-    static let bodySize: CGFloat = 14
+    static let bodySize: CGFloat = 15
     static let h1Size: CGFloat = 24
     static let h2Size: CGFloat = 19
 
@@ -16,7 +16,7 @@ enum NoteHTML {
         let styled = """
         <html><head><meta charset="utf-8"><style>
         body { font-family: -apple-system, 'Helvetica Neue'; font-size: \(Int(bodySize))px; }
-        p, li { margin: 0; } h1 { font-size: \(Int(h1Size))px; margin: 0; } h2 { font-size: \(Int(h2Size))px; margin: 0; }
+        p, li { margin: 0; line-height: 1.45; } h1 { font-size: \(Int(h1Size))px; margin: 0; } h2 { font-size: \(Int(h2Size))px; margin: 0; }
         ul, ol { margin: 0; }
         </style></head><body>\(html)</body></html>
         """
@@ -239,9 +239,12 @@ struct RichTextEditor: NSViewRepresentable {
         tv.isRichText = true
         tv.allowsUndo = true
         tv.drawsBackground = false
-        tv.textContainerInset = NSSize(width: 2, height: 6)
+        tv.textContainerInset = NSSize(width: 0, height: 6)
+        tv.textContainer?.lineFragmentPadding = 0
         tv.font = NSFont.systemFont(ofSize: NoteHTML.bodySize)
-        tv.typingAttributes = [.font: NSFont.systemFont(ofSize: NoteHTML.bodySize), .foregroundColor: NSColor.textColor]
+        let para = NSMutableParagraphStyle(); para.lineSpacing = 4; para.paragraphSpacing = 4
+        tv.typingAttributes = [.font: NSFont.systemFont(ofSize: NoteHTML.bodySize), .foregroundColor: NSColor.textColor, .paragraphStyle: para]
+        tv.defaultParagraphStyle = para
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.textStorage?.setAttributedString(NoteHTML.attributed(from: html))
         tv.delegate = context.coordinator

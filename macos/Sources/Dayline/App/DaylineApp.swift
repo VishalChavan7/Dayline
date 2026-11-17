@@ -31,6 +31,32 @@ final class Services: ObservableObject {
         ServicesLocator.shared = self
     }
 
+    /// "New …" from the toolbar, menus and ⌘N.
+    func create(_ kind: CreateKind) {
+        switch kind {
+        case .task: nav.newTaskDraft = newTaskDraft()
+        case .note: nav.go(.notes); notesUI.newNote()
+        case .habit: nav.editingHabit = Habit(id: 0, name: "", color: Palette.itemColors[store.data.habits.count % Palette.itemColors.count], startDate: store.today)
+        case .project: nav.editingProject = Project(id: 0, name: "", color: Palette.itemColors[store.data.projects.count % Palette.itemColors.count])
+        case .list: nav.editingList = TaskList(id: 0, name: "", color: Palette.itemColors[2])
+        }
+    }
+
+    /// A new task prefilled from where you are (project, list, or today).
+    func newTaskDraft() -> TaskDraft {
+        var t = TaskItem(id: 0, title: "")
+        t.priority = store.defaultPriority
+        switch nav.destination {
+        case .project(let id): t.projectId = id
+        case .list(let id): t.listId = id; t.projectId = store.list(id)?.projectId
+        case .today, .none: t.dueDate = store.today
+        default: break
+        }
+        var reminders: [Reminder] = []
+        if t.dueDate != nil, let off = store.defaultReminderOffset { reminders.append(Reminder(id: 0, taskId: 0, type: .DEADLINE, offsetMinutes: off)) }
+        return TaskDraft(task: t, reminders: reminders)
+    }
+
     func launched() {
         guard !demo else { return }
         notifier.reschedule()
@@ -142,10 +168,11 @@ struct DaylineCommands: Commands {
     let services: Services
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Task") { services.nav.newTaskDraft = TaskDraft(task: { var t = TaskItem(id: 0, title: ""); t.priority = services.store.defaultPriority; return t }()) }
-                .keyboardShortcut("n")
-            Button("New Note") { services.nav.go(.notes); services.notesUI.editing = 0 }
-                .keyboardShortcut("n", modifiers: [.command, .option])
+            Button("New Task") { services.create(.task) }.keyboardShortcut("n")
+            Button("New Note") { services.create(.note) }.keyboardShortcut("n", modifiers: [.command, .option])
+            Button("New Habit") { services.create(.habit) }.keyboardShortcut("h", modifiers: [.command, .shift])
+            Button("New Project") { services.create(.project) }
+            Button("New List") { services.create(.list) }
         }
         CommandGroup(after: .appInfo) {
             Button("Check for Updates…") { Task { await services.updater.check(userInitiated: true); if services.updater.state == .upToDate { NSSound.beep() } } }

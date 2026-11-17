@@ -29,6 +29,8 @@ struct FocusView: View {
                     }
                 }
                 .frame(width: 300, height: 300)
+                .padding(26)
+                .glass(200, tint: phaseColor)
 
                 HStack(spacing: 14) {
                     if s.status != .IDLE {
@@ -59,6 +61,7 @@ struct FocusView: View {
             .padding(30)
             .frame(maxWidth: .infinity)
         }
+        .scrollContentBackground(.hidden)
         .navigationTitle("Focus")
     }
 

@@ -57,18 +57,17 @@ sealed interface SyncStatus {
 }
 
 /** Outcome of one sync round. */
-enum class SyncOutcome { UP_TO_DATE, UPLOADED, DOWNLOADED, CONFLICT_KEPT_LOCAL, NEEDS_SIGN_IN, FAILED }
+enum class SyncOutcome { UP_TO_DATE, UPLOADED, DOWNLOADED, MERGED, CONFLICT_KEPT_LOCAL, NEEDS_SIGN_IN, FAILED }
 
 /**
  * Keeps all Dayline data in step across your devices through your own Google Drive.
  *
  * The whole database (tasks, projects, lists, habits, notes, focus history and settings) is stored as
  * one private file in Drive's hidden app folder — only Dayline can see it, and it doesn't use your
- * visible Drive. Each round compares this device with the cloud copy:
- *  - only this device changed → upload;
- *  - only the cloud changed (another device synced) → download and apply;
- *  - both changed → this device's version is kept and uploaded, and the cloud version is saved on
- *    the phone so it can be restored from Settings (nothing is lost).
+ * visible Drive. Each round merges this device with the cloud copy record by record (see [SyncMerge]),
+ * so tasks, notes and habits changed on different devices between syncs are all kept, then uploads the
+ * result. While the app is open it syncs every few seconds after a change and polls for the other
+ * device's changes.
  */
 @Singleton
 class GoogleSync @Inject constructor(
@@ -121,6 +120,7 @@ class GoogleSync @Inject constructor(
         val account = settings.sync.first().account
         SyncScheduler.cancel(context)
         settings.setSyncEnabled(false)
+        baseFile().delete()
         _status.value = SyncStatus.Idle
         if (account.contains('@')) {
             runCatching {
@@ -163,6 +163,7 @@ class GoogleSync @Inject constructor(
                 when (outcome) {
                     SyncOutcome.UPLOADED -> "Backed up to Google Drive"
                     SyncOutcome.DOWNLOADED -> "Updated from your other device"
+                    SyncOutcome.MERGED -> "Merged changes from your other device"
                     SyncOutcome.CONFLICT_KEPT_LOCAL -> "Both devices changed — kept this one; the other copy is saved"
                     else -> "Up to date"
                 },
@@ -184,52 +185,42 @@ class GoogleSync @Inject constructor(
         val now = time.nowMillis()
         if (remote == null) {
             val created = drive.create(FILE_NAME, local)
+            baseFile().writeText(local)
             settings.recordSync(localHash, created.version, now)
             return SyncOutcome.UPLOADED
         }
-        if (prefs.remoteVersion.isBlank() && isEmptyBackup(local)) {
-            // First sync with this account on a device with nothing in it yet: just take the cloud copy.
-            val content = drive.download(remote.id)
-            backup.importJson(content)
-            settings.recordSync(fingerprint(backup.exportJson()), remote.version, now)
-            return SyncOutcome.DOWNLOADED
-        }
         val localChanged = localHash != prefs.localHash
         val remoteChanged = remote.version != prefs.remoteVersion
-        return when {
-            !localChanged && !remoteChanged -> { settings.recordSync(localHash, remote.version, now); SyncOutcome.UP_TO_DATE }
-            localChanged && !remoteChanged -> {
-                val updated = drive.update(remote.id, local)
-                settings.recordSync(localHash, updated.version, now)
-                SyncOutcome.UPLOADED
-            }
-            !localChanged && remoteChanged -> {
-                val content = drive.download(remote.id)
-                if (fingerprint(content) != localHash) backup.importJson(content)
-                settings.recordSync(fingerprint(backup.exportJson()), remote.version, now)
-                SyncOutcome.DOWNLOADED
-            }
-            else -> {
-                // Both sides changed since the last sync: keep this device, save the cloud copy for recovery.
-                val content = drive.download(remote.id)
-                if (fingerprint(content) == localHash) {
-                    settings.recordSync(localHash, remote.version, now)
-                    SyncOutcome.UP_TO_DATE
-                } else {
-                    conflictFile().writeText(content)
-                    val updated = drive.update(remote.id, local)
-                    settings.recordSync(localHash, updated.version, now)
-                    SyncOutcome.CONFLICT_KEPT_LOCAL
-                }
-            }
+        if (!localChanged && !remoteChanged) {
+            settings.recordSync(localHash, remote.version, now)
+            return SyncOutcome.UP_TO_DATE
         }
+        // Merge record by record against the last synced copy, so edits from both devices are kept.
+        val base = baseFile().takeIf { it.exists() && prefs.remoteVersion.isNotBlank() }?.let { runCatching { JSONObject(it.readText()) }.getOrNull() }
+        val remoteContent = if (remoteChanged || base == null) drive.download(remote.id) else base.toString()
+        val localJson = JSONObject(local)
+        val remoteJson = runCatching { JSONObject(remoteContent) }.getOrElse { throw SyncException("The copy in Google Drive is damaged.") }
+        val merged = SyncMerge.merge(base, localJson, remoteJson, time.now().toString())
+        val mergedCanon = SyncMerge.canon(withoutStamp(merged))
+        var outcome = SyncOutcome.UP_TO_DATE
+        if (mergedCanon != SyncMerge.canon(withoutStamp(localJson))) {
+            backup.importJson(merged.toString(), keepSafetyCopy = false)
+            outcome = SyncOutcome.DOWNLOADED
+        }
+        var version = remote.version
+        if (mergedCanon != SyncMerge.canon(withoutStamp(remoteJson))) {
+            version = drive.update(remote.id, merged.toString(2)).version
+            outcome = if (outcome == SyncOutcome.DOWNLOADED) SyncOutcome.MERGED else SyncOutcome.UPLOADED
+        }
+        baseFile().writeText(merged.toString())
+        settings.recordSync(fingerprint(backup.exportJson()), version, now)
+        return outcome
     }
 
-    /** True when a backup holds no tasks, habits, notes or focus history. */
-    private fun isEmptyBackup(json: String): Boolean = runCatching {
-        val root = org.json.JSONObject(json)
-        listOf("tasks", "habits", "notes", "focusSessions").all { (root.optJSONArray(it)?.length() ?: 0) == 0 }
-    }.getOrDefault(false)
+    private fun withoutStamp(o: JSONObject) = JSONObject(o.toString()).apply { remove("exportedAt") }
+
+    /** The last copy both devices agreed on (the merge's common base). */
+    private fun baseFile() = File(context.filesDir, "sync-base.json")
 
     /** The cloud copy set aside during the last conflict, if any. */
     fun conflictCopy(): File? = conflictFile().takeIf { it.exists() && it.length() > 0 }

@@ -305,7 +305,13 @@ private fun AppScaffold(pendingRoute: String?, onRouteConsumed: () -> Unit) {
                             }
                         }
                     }
-                    AppNavHost(navigator, navController, Modifier.weight(1f).nestedScroll(scrollWatcher))
+                    com.dayline.app.ui.components.SyncRefresh(
+                        enabled = isTopLevel,
+                        modifier = Modifier.weight(1f),
+                        onMessage = { msg -> snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(msg) },
+                    ) {
+                        AppNavHost(navigator, navController, Modifier.fillMaxSize().nestedScroll(scrollWatcher))
+                    }
                 }
             }
 

@@ -10,33 +10,25 @@ struct TodayView: View {
     var body: some View {
         let today = store.today
         let hidden = store.hiddenSections
-        let order = store.dashboardOrder.filter { !hidden.contains($0) }
+        let order = store.dashboardOrder.filter { !hidden.contains($0) && $0 != .PROGRESS }
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                greeting
+                HeroBanner()
                 QuickAddField(date: today, placeholder: "Add a task for today — try “call Sam !high #work”")
+                WeekStrip()
+                if !hidden.contains(.PROGRESS) { AtAGlance() }
                 Masonry(columns: 2, spacing: 16) {
                     ForEach(order) { s in section(s) }
                 }
             }
             .padding(24)
-            .frame(maxWidth: 1100)
+            .frame(maxWidth: 1180)
             .frame(maxWidth: .infinity)
         }
+        .scrollContentBackground(.hidden)
         .navigationTitle("Today")
-        .navigationSubtitle(Formats(store: store).date(today, relative: false))
         .toolbar { Button { customizing = true } label: { Label("Customize", systemImage: "slider.horizontal.3") }.help("Choose and order the sections on Today") }
         .sheet(isPresented: $customizing) { DashboardCustomizer() }
-    }
-
-    var greeting: some View {
-        let hour = Calendar.current.component(.hour, from: Date())
-        let part = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
-        let name = store.userName.trimmingCharacters(in: .whitespaces)
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(name.isEmpty ? part : "\(part), \(name)").font(.largeTitle.weight(.bold))
-            Text(Date().formatted(.dateTime.weekday(.wide).month(.wide).day())).font(.title3).foregroundStyle(.secondary)
-        }
     }
 
     @ViewBuilder func section(_ s: DashboardSection) -> some View {
@@ -45,34 +37,175 @@ struct TodayView: View {
         let collapsed = store.collapsedSections.contains(s)
         switch s {
         case .PROGRESS:
-            ProgressCard()
+            EmptyView()
         case .OVERDUE:
             let tasks = open.filter { $0.isOverdue(today) }.sorted(by: TaskGrouping.chronological)
-            if !tasks.isEmpty { TaskCard(section: s, title: "Overdue", tasks: tasks, color: StatusColor.overdue, collapsed: collapsed, action: ("Move all to today", { tasks.forEach { store.reschedule($0.id, to: today) } })) }
+            if !tasks.isEmpty { TaskCard(section: s, title: "Overdue", symbol: "exclamationmark.circle.fill", tasks: tasks, color: StatusColor.overdue, collapsed: collapsed, action: ("Move all to today", { tasks.forEach { store.reschedule($0.id, to: today) } })) }
         case .TODAY:
             let tasks = TaskGrouping.onDay(store.data.tasks, today).filter { !$0.isOverdue(today) }
                 .sorted { a, b in a.isCompleted != b.isCompleted ? !a.isCompleted : (store.groupTodayByPriority && a.priority != b.priority ? a.priority > b.priority : TaskGrouping.chronological(a, b)) }
-            TaskCard(section: s, title: "Today", tasks: tasks, collapsed: collapsed, emptyText: "Nothing planned for today. Enjoy the space, or add something above.")
+            TaskCard(section: s, title: "Today", symbol: "sun.max.fill", tasks: tasks, color: Destination.today.tint, collapsed: collapsed, emptyText: "Nothing planned for today. Enjoy the space, or add something above.")
         case .INBOX:
             let tasks = open.filter { $0.scheduledDate == nil && $0.projectId == nil && $0.listId == nil }.sorted { $0.sortOrder < $1.sortOrder }
-            if !tasks.isEmpty { TaskCard(section: s, title: "Inbox", tasks: Array(tasks.prefix(6)), collapsed: collapsed, more: tasks.count > 6 ? { nav.go(.inbox) } : nil) }
+            if !tasks.isEmpty { TaskCard(section: s, title: "Inbox", symbol: "tray.fill", tasks: Array(tasks.prefix(6)), color: Destination.inbox.tint, collapsed: collapsed, more: tasks.count > 6 ? { nav.go(.inbox) } : nil) }
         case .DEADLINES:
             let tasks = open.filter { t in t.dueDate.map { $0 > today && !($0 > today.plusDays(7)) } ?? false }.sorted(by: TaskGrouping.chronological)
-            if !tasks.isEmpty { TaskCard(section: s, title: "Upcoming deadlines", tasks: tasks, collapsed: collapsed) }
+            if !tasks.isEmpty { TaskCard(section: s, title: "Coming up", symbol: "calendar.badge.clock", tasks: tasks, color: Destination.upcoming.tint, collapsed: collapsed) }
         case .FOCUS:
             FocusCard()
         case .WEEKLY:
             WeeklyCard()
         case .QUOTE:
-            let q = Quotes.of(today)
-            Card {
-                VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: "quote.opening").foregroundStyle(.tint)
-                    Text(q.text).font(.title3).fixedSize(horizontal: false, vertical: true)
-                    Text("— \(q.author)").foregroundStyle(.secondary)
+            QuoteCard()
+        }
+    }
+}
+
+/// The illustrated header: a sky that follows the time of day, the greeting and today's summary.
+struct HeroBanner: View {
+    @EnvironmentObject var store: Store
+    var body: some View {
+        let today = store.today
+        let hour = Calendar.current.component(.hour, from: Date())
+        let part = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
+        let name = store.userName.trimmingCharacters(in: .whitespaces)
+        let tasksLeft = TaskGrouping.onDay(store.openTasks, today).count + store.openTasks.filter { $0.isOverdue(today) }.count
+        let habits = store.activeHabits.filter { HabitStreaks.dueOn($0, today, store.completions(of: $0.id), weekStart: store.weekStart) }
+        let habitsLeft = habits.filter { !HabitStreaks.isDone($0, store.count($0.id, on: today)) }.count
+        let dark = DayPart.now == .night || DayPart.now == .dusk
+        ZStack(alignment: .bottomLeading) {
+            Landscape(part: .now)
+            LinearGradient(colors: [.black.opacity(dark ? 0.25 : 0.0), .clear], startPoint: .bottom, endPoint: .center)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(Date().formatted(.dateTime.weekday(.wide).month(.wide).day()).uppercased())
+                    .font(.system(size: 12, weight: .semibold, design: .rounded)).tracking(1.2)
+                    .foregroundStyle(dark ? .white.opacity(0.8) : .black.opacity(0.55))
+                Text(name.isEmpty ? part : "\(part), \(name)")
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .foregroundStyle(dark ? .white : Color(hex: 0x1C1B2E))
+                Text(summary(tasksLeft, habitsLeft))
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(dark ? .white.opacity(0.85) : .black.opacity(0.6))
+            }
+            .padding(26)
+        }
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).strokeBorder(.white.opacity(0.35), lineWidth: 1))
+        .shadow(color: .black.opacity(0.12), radius: 20, y: 10)
+    }
+
+    func summary(_ tasks: Int, _ habits: Int) -> String {
+        switch (tasks, habits) {
+        case (0, 0): return "Everything's done for today. Take a breath."
+        case (_, 0): return "\(tasks) task\(tasks == 1 ? "" : "s") left today."
+        case (0, _): return "\(habits) habit\(habits == 1 ? "" : "s") left today."
+        default: return "\(tasks) task\(tasks == 1 ? "" : "s") and \(habits) habit\(habits == 1 ? "" : "s") left today."
+        }
+    }
+}
+
+/// This week at a glance; click a day to open it in the calendar.
+struct WeekStrip: View {
+    @EnvironmentObject var store: Store
+    @EnvironmentObject var nav: Navigator
+    var body: some View {
+        let days = DateRules.weekDays(store.today, store.weekStart)
+        HStack(spacing: 8) {
+            ForEach(days, id: \.self) { d in
+                let tasks = TaskGrouping.onDay(store.data.tasks, d)
+                let isToday = d == store.today
+                Button { nav.go(.calendar) } label: {
+                    VStack(spacing: 4) {
+                        Text(d.weekday.short.uppercased()).font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(isToday ? .white.opacity(0.85) : .secondary)
+                        Text("\(d.dayOfMonth)").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(isToday ? .white : .primary)
+                        HStack(spacing: 2) {
+                            ForEach(0..<min(3, tasks.count), id: \.self) { i in
+                                Circle().fill(isToday ? .white : (tasks[i].isCompleted ? Color.secondary.opacity(0.5) : tasks[i].priority.color)).frame(width: 4, height: 4)
+                            }
+                        }.frame(height: 4)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 10)
+                    .background {
+                        if isToday { RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(Color.accentColor.gradient) }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+        .glass(Radius.card)
+    }
+}
+
+/// Three rings for today's tasks, habits and focus, plus one-click habit check-ins.
+struct AtAGlance: View {
+    @EnvironmentObject var store: Store
+    var body: some View {
+        let today = store.today
+        let tasks = TaskGrouping.onDay(store.data.tasks, today)
+        let doneTasks = tasks.filter(\.isCompleted).count
+        let habits = store.activeHabits.filter { HabitStreaks.dueOn($0, today, store.completions(of: $0.id), weekStart: store.weekStart) }
+        let doneHabits = habits.filter { HabitStreaks.isDone($0, store.count($0.id, on: today)) }.count
+        let focus = store.focusMinutes(on: today), goal = max(1, store.focusConfig.dailyGoalMinutes)
+        Card {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 22) {
+                    GlanceRing(value: tasks.isEmpty ? 0 : Double(doneTasks) / Double(tasks.count), color: Destination.today.tint, title: "Tasks", detail: "\(doneTasks)/\(tasks.count)")
+                    GlanceRing(value: habits.isEmpty ? 0 : Double(doneHabits) / Double(habits.count), color: Destination.habits.tint, title: "Habits", detail: "\(doneHabits)/\(habits.count)")
+                    GlanceRing(value: Double(focus) / Double(goal), color: Destination.focus.tint, title: "Focus", detail: Formats.minutes(focus))
+                    Spacer()
+                    let overdue = store.openTasks.filter { $0.isOverdue(today) }.count
+                    if overdue > 0 {
+                        Label("\(overdue) overdue", systemImage: "exclamationmark.circle.fill").font(.callout.weight(.semibold)).foregroundStyle(StatusColor.overdue)
+                    }
+                }
+                if !habits.isEmpty {
+                    FlowRow(spacing: 8) { ForEach(habits) { h in HabitChip(habit: h, day: today) } }
                 }
             }
         }
+    }
+}
+
+struct GlanceRing: View {
+    let value: Double
+    let color: Color
+    let title: String
+    let detail: String
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Ring(progress: value, lineWidth: 8, color: color)
+                Text("\(Int((min(1, value) * 100).rounded()))%").font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
+            }
+            .frame(width: 58, height: 58)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.secondary)
+                Text(detail).font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
+            }
+        }
+    }
+}
+
+struct QuoteCard: View {
+    @EnvironmentObject var store: Store
+    var body: some View {
+        let q = Quotes.of(store.today)
+        ZStack(alignment: .bottomLeading) {
+            Landscape(part: .dawn, sunPosition: CGPoint(x: 0.82, y: 0.35)).opacity(0.9)
+            LinearGradient(colors: [.white.opacity(0.0), .white.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: "quote.opening").foregroundStyle(Color(hex: 0x6E4B8E))
+                Text(q.text).font(.system(size: 18, weight: .semibold, design: .serif)).foregroundStyle(Color(hex: 0x1C1B2E)).fixedSize(horizontal: false, vertical: true)
+                Text("— \(q.author)").font(.callout).foregroundStyle(Color(hex: 0x1C1B2E).opacity(0.65))
+            }
+            .padding(20)
+        }
+        .frame(minHeight: 170)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(.white.opacity(0.4)))
     }
 }
 
@@ -112,8 +245,9 @@ struct TaskCard: View {
     @EnvironmentObject var nav: Navigator
     let section: DashboardSection
     let title: String
+    var symbol: String = "checklist"
     let tasks: [TaskItem]
-    var color: Color = .primary
+    var color: Color = .accentColor
     var collapsed = false
     var emptyText: String?
     var action: (String, () -> Void)?
@@ -123,7 +257,8 @@ struct TaskCard: View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text(title).font(.headline).foregroundStyle(color)
+                    IconTile(symbol: symbol, color: color, size: 24)
+                    Text(title).font(.system(size: 16, weight: .bold, design: .rounded))
                     Text("\(tasks.filter { !$0.isCompleted }.count)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                     Spacer()
                     if let action, !collapsed { Button(action.0, action: action.1).buttonStyle(.borderless).font(.callout) }
@@ -143,49 +278,9 @@ struct TaskCard: View {
                             .onTapGesture(count: 2) { nav.open(t.id) }
                             .onTapGesture { nav.selectedTask = t.id; if nav.showInspector { nav.open(t.id) } }
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(nav.selectedTask == t.id ? Color.accentColor.opacity(0.12) : .clear))
+                            .background(RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(nav.selectedTask == t.id ? Color.accentColor.opacity(0.14) : .clear))
                     }
                     if let more { Button("Show all", action: more).buttonStyle(.borderless) }
-                }
-            }
-        }
-    }
-}
-
-struct ProgressCard: View {
-    @EnvironmentObject var store: Store
-    @EnvironmentObject var nav: Navigator
-    var body: some View {
-        let today = store.today
-        let tasks = TaskGrouping.onDay(store.data.tasks, today)
-        let doneTasks = tasks.filter(\.isCompleted).count
-        let habits = store.activeHabits.filter { HabitStreaks.dueOn($0, today, store.completions(of: $0.id), weekStart: store.weekStart) }
-        let doneHabits = habits.filter { HabitStreaks.isDone($0, store.count($0.id, on: today)) }.count
-        let total = tasks.count + habits.count, done = doneTasks + doneHabits
-        Card {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 18) {
-                    ZStack {
-                        Ring(progress: total == 0 ? 0 : Double(done) / Double(total), lineWidth: 11)
-                        VStack(spacing: 0) {
-                            Text(total == 0 ? "–" : "\(Int((Double(done) / Double(max(1, total)) * 100).rounded()))%").font(.title2.weight(.bold).monospacedDigit())
-                            Text("done").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }.frame(width: 92, height: 92)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Daily progress").font(.headline)
-                        Label("\(doneTasks) of \(tasks.count) tasks", systemImage: "checkmark.circle").foregroundStyle(.secondary)
-                        Label("\(doneHabits) of \(habits.count) habits", systemImage: "flame").foregroundStyle(.secondary)
-                        let overdue = store.openTasks.filter { $0.isOverdue(today) }.count
-                        if overdue > 0 { Label("\(overdue) overdue", systemImage: "exclamationmark.circle").foregroundStyle(StatusColor.overdue) }
-                    }
-                    Spacer()
-                }
-                if !habits.isEmpty {
-                    Divider()
-                    FlowRow(spacing: 8) {
-                        ForEach(habits) { h in HabitChip(habit: h, day: today) }
-                    }
                 }
             }
         }

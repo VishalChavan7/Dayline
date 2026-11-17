@@ -139,5 +139,44 @@ eq(p.tasks.first?.recurrence?.frequency, .MONTHLY, "phone recurrence")
 eq(p.settings["user_name"]?.string, "Vishal", "settings kept")
 do { _ = try BackupCodec.decode(Data("{\"app\":\"other\"}".utf8)); check(false, "foreign file rejected") } catch { check(true, "") }
 
+
+// MARK: Sync merge (same cases as the phone's SyncMergeTest)
+func file(_ tables: [String: [[String: Any]]], settings: [String: Any] = [:]) -> Data {
+    var o: [String: Any] = ["app": "dayline", "formatVersion": 1, "exportedAt": "x", "settings": settings]
+    for (k, v) in tables { o[k] = v }
+    return try! JSONSerialization.data(withJSONObject: o)
+}
+func mergedRows(_ d: Data, _ table: String) -> [[String: Any]] {
+    ((try! JSONSerialization.jsonObject(with: d)) as! [String: Any])[table] as? [[String: Any]] ?? []
+}
+func titles(_ d: Data, _ t: String) -> [String] { mergedRows(d, t).compactMap { $0["title"] as? String }.sorted() }
+func row(_ d: Data, _ t: String, _ title: String) -> [String: Any]? { mergedRows(d, t).first { $0["title"] as? String == title } }
+func nt(_ id: Int, _ title: String, _ u: Int = 1) -> [String: Any] { ["id": id, "title": title, "body": "", "updatedAt": u] }
+
+var m = try SyncMerge.merge(base: file(["notes": [nt(1, "Shared")]]), local: file(["notes": [nt(1, "Shared"), nt(2, "From Mac")]]), remote: file(["notes": [nt(1, "Shared"), nt(2, "From phone")]]))
+eq(titles(m, "notes"), ["From Mac", "From phone", "Shared"], "note added on each device keeps both")
+eq(row(m, "notes", "From Mac")?["id"] as? Int, 3, "this device's colliding note is renumbered")
+m = try SyncMerge.merge(base: file(["tasks": [nt(1, "Old")], "subtasks": []]),
+                        local: file(["tasks": [nt(1, "Old"), nt(2, "Mac task")], "subtasks": [["id": 1, "taskId": 2, "title": "mac step"]]]),
+                        remote: file(["tasks": [nt(1, "Old"), nt(2, "Phone task")], "subtasks": [["id": 1, "taskId": 2, "title": "phone step"]]]))
+eq(row(m, "subtasks", "mac step")?["taskId"] as? Int, row(m, "tasks", "Mac task")?["id"] as? Int, "renumbered task keeps its subtasks")
+eq(row(m, "subtasks", "phone step")?["taskId"] as? Int, 2, "other device's subtask untouched")
+m = try SyncMerge.merge(base: file(["notes": [nt(1, "Keep"), nt(2, "Delete me")]]), local: file(["notes": [nt(1, "Keep")]]), remote: file(["notes": [nt(1, "Keep"), nt(2, "Delete me")]]))
+eq(titles(m, "notes"), ["Keep"], "deletion sticks")
+m = try SyncMerge.merge(base: file(["notes": [nt(1, "Draft")]]), local: file(["notes": []]), remote: file(["notes": [nt(1, "Draft edited", 5)]]))
+eq(titles(m, "notes"), ["Draft edited"], "edit beats deletion")
+m = try SyncMerge.merge(base: file(["notes": [nt(1, "A"), nt(2, "B")]]), local: file(["notes": [nt(1, "A mac", 10), nt(2, "B mac", 10)]]), remote: file(["notes": [nt(1, "A"), nt(2, "B phone", 20)]]))
+eq(titles(m, "notes"), ["A mac", "B phone"], "one-sided edit wins; newer wins when both edit")
+m = try SyncMerge.merge(base: nil, local: file(["notes": [nt(1, "Same"), nt(2, "Only here")]]), remote: file(["notes": [nt(1, "Same"), nt(3, "Only there")]]))
+eq(titles(m, "notes"), ["Only here", "Only there", "Same"], "no base: union, no duplicates")
+m = try SyncMerge.merge(base: file([:], settings: ["accent_color": 1, "user_name": "V"]), local: file([:], settings: ["accent_color": 2, "user_name": "V"]), remote: file([:], settings: ["accent_color": 1, "user_name": "Vishal"]))
+let ms = ((try JSONSerialization.jsonObject(with: m)) as! [String: Any])["settings"] as! [String: Any]
+eq(ms["accent_color"] as? Int, 2, "setting changed here kept"); eq(ms["user_name"] as? String, "Vishal", "setting changed there taken")
+eq(SyncMerge.canon(["b": 1, "a": "x", "c": NSNull()]), SyncMerge.canon(["a": "x", "b": Int64(1)]), "canon ignores order, nulls and int types")
+check(SyncMerge.canon(["t": true]) != SyncMerge.canon(["t": 1]), "canon keeps booleans apart from numbers")
+// A real round: the merged file decodes back into the model.
+let decodedMerged = try BackupCodec.decode(try SyncMerge.merge(base: nil, local: BackupCodec.encode(data), remote: Data(phone.utf8)))
+eq(decodedMerged.tasks.count, 2, "merged Mac + phone files decode (tasks from both)")
+
 print(failures == 0 ? "All \(passed) checks passed." : "\(failures) failed, \(passed) passed.")
 exit(failures == 0 ? 0 : 1)

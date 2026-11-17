@@ -20,6 +20,25 @@ enum Destination: Hashable {
         }
     }
     static let main: [Destination] = [.today, .upcoming, .inbox, .calendar, .habits, .focus, .notes, .stats]
+
+    /// Tile colour in the sidebar and the tint of the screen's background wash.
+    var tint: Color {
+        switch self {
+        case .today: Color(hex: 0xF5A524); case .upcoming: Color(hex: 0x8B5CF6); case .inbox: Color(hex: 0x3B82F6)
+        case .calendar: Color(hex: 0xEF4444); case .habits: Color(hex: 0xF97316); case .focus: Color(hex: 0x14B8A6)
+        case .notes: Color(hex: 0xEAB308); case .stats: Color(hex: 0x6366F1); case .completed: Color(hex: 0x22C55E)
+        case .project, .list, .tag: .accentColor
+        }
+    }
+}
+
+enum CreateKind: String, CaseIterable, Identifiable {
+    case task, note, habit, project, list
+    var id: String { rawValue }
+    var label: String { "New " + rawValue.capitalized }
+    var symbol: String {
+        switch self { case .task: "checkmark.circle"; case .note: "square.and.pencil"; case .habit: "flame"; case .project: "folder.badge.plus"; case .list: "list.bullet" }
+    }
 }
 
 /// Window-level navigation and selection.
@@ -33,6 +52,12 @@ final class Navigator: ObservableObject {
     @Published var editingList: TaskList?
     @Published var newTaskDraft: TaskDraft?
     @Published var undo: (message: String, action: () -> Void)?
+    @Published var editingHabit: Habit?
+
+    /// What "+" makes on the current screen.
+    var primaryCreate: CreateKind {
+        switch destination { case .notes: .note; case .habits: .habit; default: .task }
+    }
 
     func open(_ id: Int64) { selectedTask = id; showInspector = true }
     func go(_ d: Destination) { search = ""; destination = d }
@@ -42,6 +67,8 @@ struct RootView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
     @EnvironmentObject var sync: SyncService
+    @EnvironmentObject var notesUI: NotesUI
+    @EnvironmentObject var services: Services
 
     var body: some View {
         NavigationSplitView {
@@ -51,6 +78,7 @@ struct RootView: View {
             ZStack(alignment: .bottom) {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(AmbientBackdrop(colors: backdropColors))
                 if let u = nav.undo { UndoBar(message: u.message, action: u.action) { nav.undo = nil } }
                 if let n = store.notice { NoticeBar(message: n) { store.notice = nil } }
             }
@@ -68,13 +96,13 @@ struct RootView: View {
         .searchable(text: $nav.search, placement: .sidebar, prompt: "Search tasks, notes, projects")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                SyncButton()
-                Button { nav.newTaskDraft = newDraft() } label: { Label("New Task", systemImage: "plus") }
-                    .help("New task (⌘N)")
+                RefreshButton()
+                CreateMenu { services.create($0) }
                 Button { nav.showInspector.toggle() } label: { Label("Details", systemImage: "sidebar.right") }
                     .help("Show or hide task details")
             }
         }
+        .sheet(item: $nav.editingHabit) { h in HabitEditor(habit: h) }
         .sheet(item: Binding(get: { nav.newTaskDraft.map(DraftBox.init) }, set: { nav.newTaskDraft = $0?.draft })) { box in
             TaskEditorSheet(draft: box.draft)
         }
@@ -86,19 +114,11 @@ struct RootView: View {
         }
     }
 
-    /// A new task prefilled from where you are (project, list, or today).
-    func newDraft() -> TaskDraft {
-        var t = TaskItem(id: 0, title: "")
-        t.priority = store.defaultPriority
-        switch nav.destination {
-        case .project(let id): t.projectId = id
-        case .list(let id): t.listId = id; t.projectId = store.list(id)?.projectId
-        case .today, .none: t.dueDate = store.today
-        default: break
+    var backdropColors: [Color] {
+        switch nav.destination ?? .today {
+        case .project(let id): let c = Color(argb: store.project(id)?.color ?? 0); return [c, c.opacity(0.6), .accentColor]
+        case let d: return [d.tint, .accentColor, d.tint.opacity(0.7)]
         }
-        var reminders: [Reminder] = []
-        if t.dueDate != nil, let off = store.defaultReminderOffset { reminders.append(Reminder(id: 0, taskId: 0, type: .DEADLINE, offsetMinutes: off)) }
-        return TaskDraft(task: t, reminders: reminders)
     }
 
     @ViewBuilder var content: some View {
@@ -134,7 +154,7 @@ struct Sidebar: View {
         List(selection: $nav.destination) {
             Section {
                 ForEach(Destination.main, id: \.self) { d in
-                    Label(d.title, systemImage: d.symbol)
+                    Label { Text(d.title) } icon: { IconTile(symbol: d.symbol, color: d.tint) }
                         .badge(badge(d))
                         .tag(d)
                 }
@@ -185,7 +205,7 @@ struct Sidebar: View {
                 }
             }
             Section {
-                Label("Completed", systemImage: Destination.completed.symbol).tag(Destination.completed)
+                Label { Text("Completed") } icon: { IconTile(symbol: Destination.completed.symbol, color: Destination.completed.tint) }.tag(Destination.completed)
                 let archived = store.data.projects.filter(\.isArchived)
                 if !archived.isEmpty {
                     DisclosureGroup("Archived projects", isExpanded: $showArchived) {
@@ -208,6 +228,63 @@ struct Sidebar: View {
         case .inbox: return store.openTasks.filter { $0.scheduledDate == nil && $0.projectId == nil && $0.listId == nil }.count
         default: return 0
         }
+    }
+}
+
+/// A small rounded colour tile behind a sidebar symbol (macOS Tahoe style).
+struct IconTile: View {
+    let symbol: String
+    let color: Color
+    var size: CGFloat = 20
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.55, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous).fill(color.gradient))
+    }
+}
+
+/// Sync now. Spins while syncing; explains how to turn sync on when it's off.
+struct RefreshButton: View {
+    @EnvironmentObject var sync: SyncService
+    @State private var explain = false
+    @State private var spin = false
+    var body: some View {
+        Button {
+            if sync.enabled { Task { await sync.syncNow() } } else { explain = true }
+        } label: {
+            Label("Refresh", systemImage: "arrow.clockwise")
+                .rotationEffect(.degrees(spin ? 360 : 0))
+                .animation(spin ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default, value: spin)
+        }
+        .help(sync.enabled ? "Sync now · \(sync.statusText)" : "Refresh")
+        .keyboardShortcut("r")
+        .onChange(of: sync.status) { _, s in spin = s == .syncing }
+        .popover(isPresented: $explain, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Sync is off").font(.headline)
+                Text("Connect your Google account to keep Dayline in step with your phone.").foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                SettingsLink { Text("Open Sync Settings…") }
+            }
+            .padding(16).frame(width: 260)
+        }
+    }
+}
+
+/// "+" makes the obvious thing for this screen; the arrow offers everything else.
+struct CreateMenu: View {
+    @EnvironmentObject var nav: Navigator
+    let create: (CreateKind) -> Void
+    var body: some View {
+        Menu {
+            ForEach(CreateKind.allCases) { k in Button { create(k) } label: { Label(k.label, systemImage: k.symbol) } }
+        } label: {
+            Label(nav.primaryCreate.label, systemImage: "plus")
+        } primaryAction: {
+            create(nav.primaryCreate)
+        }
+        .help("\(nav.primaryCreate.label) (⌘N)")
     }
 }
 

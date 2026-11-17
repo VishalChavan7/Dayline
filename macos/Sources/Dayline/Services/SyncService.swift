@@ -1,12 +1,11 @@
 import Foundation
 import Combine
+import AppKit
 import DaylineCore
 
 /// Keeps the Mac in step with the phone through your own Google Drive, using the same private file
 /// ("dayline-sync.json" in Drive's hidden app folder) and the same rules as the phone:
-///  - only this Mac changed → upload;
-///  - only the cloud changed (the phone synced) → download and apply;
-///  - both changed → keep this Mac's version, upload it, and save the cloud copy so it can be restored.
+/// records are merged one by one (SyncMerge), so changes made on each device between syncs are all kept.
 @MainActor
 final class SyncService: ObservableObject {
     enum Status: Equatable { case idle, syncing, done(String), failed(String) }
@@ -33,7 +32,14 @@ final class SyncService: ObservableObject {
         account = demo ? nil : d.string(forKey: "sync.account")
         lastSync = d.object(forKey: "sync.lastAt") as? Date
         hasConflictCopy = FileManager.default.fileExists(atPath: conflictURL.path)
-        let t = Timer(timeInterval: 15 * 60, repeats: true) { [weak self] _ in Task { @MainActor in self?.syncIfEnabled() } }
+        // While Dayline is in front, look for the phone's changes every 20 s; otherwise every 5 minutes.
+        let t = Timer(timeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let active = NSApp?.isActive ?? false
+                if active || Date().timeIntervalSince(self.lastSync ?? .distantPast) > 300 { self.syncIfEnabled() }
+            }
+        }
         RunLoop.main.add(t, forMode: .common)
         periodic = t
     }
@@ -67,6 +73,7 @@ final class SyncService: ObservableObject {
             account = nil
             d.removeObject(forKey: "sync.account")
             localHash = ""; remoteVersion = ""
+            try? FileManager.default.removeItem(at: baseURL)
             status = .idle
         }
     }
@@ -76,6 +83,7 @@ final class SyncService: ObservableObject {
             await GoogleAuth.revoke()
             account = nil
             d.removeObject(forKey: "sync.account")
+            try? FileManager.default.removeItem(at: baseURL)
             connect(chooseAccount: true)
         }
     }
@@ -83,7 +91,7 @@ final class SyncService: ObservableObject {
     // MARK: Syncing
 
     /// A quick sync shortly after you change something.
-    func scheduleSoon(_ seconds: Double = 20) {
+    func scheduleSoon(_ seconds: Double = 3) {
         guard enabled else { return }
         soon?.cancel()
         soon = Task { [weak self] in
@@ -118,53 +126,39 @@ final class SyncService: ObservableObject {
         }
     }
 
+    private var baseURL: URL { Store.supportDirectory.appendingPathComponent("sync-base.json") }
+
+    /// One sync: merge this Mac with the cloud copy record by record (see SyncMerge), apply, upload.
     private func round(_ drive: Drive) async throws -> String {
-        let local = store.data
-        let localNow = BackupCodec.fingerprint(local)
+        let local = BackupCodec.encode(store.data)
+        let localNow = BackupCodec.fingerprint(store.data)
         guard let remote = try await drive.find(Self.fileName) else {
-            let created = try await drive.create(Self.fileName, BackupCodec.encode(local))
+            let created = try await drive.create(Self.fileName, local)
+            try? local.write(to: baseURL, options: .atomic)
             localHash = localNow; remoteVersion = created.version
             return "Backed up to Google Drive"
         }
-        if remoteVersion.isEmpty && local.isEmpty {
-            // First sync on a Mac with nothing in it yet: take the phone's copy.
-            try apply(try await drive.download(remote.id))
-            remoteVersion = remote.version
-            return "Updated from your phone"
-        }
         let localChanged = localNow != localHash
         let remoteChanged = remote.version != remoteVersion
-        switch (localChanged, remoteChanged) {
-        case (false, false):
-            remoteVersion = remote.version
-            return "Up to date"
-        case (true, false):
-            let u = try await drive.update(remote.id, BackupCodec.encode(local))
-            localHash = localNow; remoteVersion = u.version
-            return "Backed up to Google Drive"
-        case (false, true):
-            let content = try await drive.download(remote.id)
-            try apply(content)
-            remoteVersion = remote.version
-            return "Updated from your phone"
-        case (true, true):
-            let content = try await drive.download(remote.id)
-            if let theirs = try? BackupCodec.decode(content), BackupCodec.fingerprint(theirs) == localNow {
-                localHash = localNow; remoteVersion = remote.version
-                return "Up to date"
-            }
-            try? content.write(to: conflictURL, options: .atomic)
-            hasConflictCopy = true
-            let u = try await drive.update(remote.id, BackupCodec.encode(local))
-            localHash = localNow; remoteVersion = u.version
-            return "Both devices changed — kept this Mac's version; the other copy is saved"
+        if !localChanged && !remoteChanged { return "Up to date" }
+        let base = remoteVersion.isEmpty ? nil : try? Data(contentsOf: baseURL)
+        let remoteData = (remoteChanged || base == nil) ? try await drive.download(remote.id) : base!
+        let merged = try SyncMerge.merge(base: base, local: local, remote: remoteData)
+        let mergedCanon = SyncMerge.canonFile(merged)
+        var pulled = false, pushed = false
+        if mergedCanon != SyncMerge.canonFile(local) {
+            store.replaceAll(with: try BackupCodec.decode(merged), keepSafetyCopy: false)
+            pulled = true
         }
-    }
-
-    private func apply(_ content: Data) throws {
-        let theirs = try BackupCodec.decode(content)
-        if BackupCodec.fingerprint(theirs) != BackupCodec.fingerprint(store.data) { store.replaceAll(with: theirs) }
+        var version = remote.version
+        if mergedCanon != SyncMerge.canonFile(remoteData) {
+            version = try await drive.update(remote.id, merged).version
+            pushed = true
+        }
+        try? merged.write(to: baseURL, options: .atomic)
         localHash = BackupCodec.fingerprint(store.data)
+        remoteVersion = version
+        return pulled && pushed ? "Merged changes from your phone" : pulled ? "Updated from your phone" : pushed ? "Synced" : "Up to date"
     }
 
     func restoreConflictCopy() {

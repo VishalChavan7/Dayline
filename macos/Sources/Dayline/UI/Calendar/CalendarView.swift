@@ -6,7 +6,7 @@ enum CalendarMode: String, CaseIterable { case month = "Month", week = "Week", y
 struct CalendarView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
-    @State private var mode: CalendarMode = .month
+    @AppStorage("calendar.mode") private var mode: CalendarMode = .month
     @State private var anchor = Day.today()
     @State private var selected = Day.today()
 
@@ -17,13 +17,18 @@ struct CalendarView: View {
                 Divider()
                 switch mode {
                 case .month: MonthGrid(anchor: anchor, selected: $selected, entries: entries(for:))
-                case .week: WeekColumns(anchor: anchor, selected: $selected, entries: entries(for:))
+                case .week: WeekTimeGrid(anchor: anchor, selected: $selected, entries: entries(for:))
                 case .year: YearGrid(year: anchor.year, selected: $selected) { d in selected = d; anchor = d; mode = .month }
                 }
             }
-            .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
+            .glass(Radius.panel)
+            .padding(16)
+            .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
             DayPanel(day: selected, entries: entries(for: selected))
-                .frame(minWidth: 260, idealWidth: 300, maxWidth: 380, maxHeight: .infinity)
+                .glass(Radius.panel)
+                .padding([.vertical, .trailing], 16)
+                .frame(minWidth: 280, idealWidth: 320, maxWidth: 400, maxHeight: .infinity)
         }
         .navigationTitle("Calendar")
         .toolbar {
@@ -44,14 +49,14 @@ struct CalendarView: View {
 
     var header: some View {
         HStack {
-            Text(title).font(.title2.weight(.semibold))
+            Text(title).font(.system(size: 22, weight: .bold, design: .rounded))
             Spacer()
             Button { move(-1) } label: { Image(systemName: "chevron.left") }.help("Previous")
             Button("Today") { anchor = store.today; selected = store.today }
             Button { move(1) } label: { Image(systemName: "chevron.right") }.help("Next")
         }
-        .buttonStyle(.bordered)
-        .padding(.horizontal, 16).padding(.vertical, 10)
+        .glassButton()
+        .padding(.horizontal, 18).padding(.vertical, 12)
     }
 
     func move(_ n: Int) {
@@ -292,5 +297,146 @@ struct DayPanel: View {
             }
         }
         .padding(14)
+    }
+}
+
+
+/// Week as a time grid (TickTick-style): an all-day row, then hours with timed tasks as blocks.
+/// Drag a task onto a day and time to move it there.
+struct WeekTimeGrid: View {
+    @EnvironmentObject var store: Store
+    @EnvironmentObject var nav: Navigator
+    let anchor: Day
+    @Binding var selected: Day
+    let entries: (Day) -> [CalendarEntry]
+    private let hourHeight: CGFloat = 52
+    private let gutter: CGFloat = 56
+
+    var body: some View {
+        let days = DateRules.weekDays(anchor, store.weekStart)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Spacer().frame(width: gutter)
+                ForEach(days, id: \.self) { d in
+                    let isToday = d == store.today
+                    VStack(spacing: 2) {
+                        Text(d.weekday.short.uppercased()).font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(isToday ? Color.accentColor : .secondary)
+                        Text("\(d.dayOfMonth)").font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundStyle(isToday ? .white : .primary)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(isToday ? Color.accentColor : .clear))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selected = d }
+                }
+            }
+            .padding(.vertical, 6)
+            // All-day row
+            HStack(alignment: .top, spacing: 0) {
+                Text("all-day").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary).frame(width: gutter, alignment: .trailing).padding(.trailing, 6)
+                ForEach(days, id: \.self) { d in
+                    VStack(spacing: 3) {
+                        ForEach(entries(d).filter { ($0.task.dueTime ?? $0.task.startTime) == nil }.prefix(4)) { e in
+                            EntryChip(entry: e).draggable(TaskDragItem(id: e.task.id)).onTapGesture(count: 2) { nav.open(e.task.id) }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .top)
+                    .padding(.horizontal, 3)
+                    .dropDestination(for: TaskDragItem.self) { items, _ in
+                        items.forEach { i in store.reschedule(i.id, to: d); store.update(i.id) { $0.dueTime = nil; $0.startTime = nil } }
+                        return true
+                    }
+                }
+            }
+            .padding(.bottom, 6)
+            Divider()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    ZStack(alignment: .topLeading) {
+                        VStack(spacing: 0) {
+                            ForEach(0..<24, id: \.self) { h in
+                                HStack(alignment: .top, spacing: 0) {
+                                    Text(h == 0 ? "" : hourLabel(h)).font(.system(size: 10, weight: .medium).monospacedDigit()).foregroundStyle(.secondary)
+                                        .frame(width: gutter - 8, alignment: .trailing).offset(y: -6)
+                                    Rectangle().fill(Color.primary.opacity(0.07)).frame(height: 0.5).frame(maxWidth: .infinity).padding(.leading, 8)
+                                }
+                                .frame(height: hourHeight, alignment: .top)
+                                .id(h)
+                            }
+                        }
+                        HStack(spacing: 0) {
+                            Spacer().frame(width: gutter)
+                            ForEach(days, id: \.self) { d in dayColumn(d) }
+                        }
+                    }
+                }
+                .onAppear { proxy.scrollTo(7, anchor: .top) }
+            }
+        }
+    }
+
+    func hourLabel(_ h: Int) -> String {
+        let f = DateFormatter()
+        let twentyFour = store.timeFormat == "H24" || (store.timeFormat == "SYSTEM" && !(DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current) ?? "").contains("a"))
+        f.dateFormat = twentyFour ? "HH:mm" : "h a"
+        return f.string(from: Day.today().date(at: TimeOfDay(hour: h, minute: 0)))
+    }
+
+    func dayColumn(_ d: Day) -> some View {
+        let timed = entries(d).filter { ($0.task.dueTime ?? $0.task.startTime) != nil }
+        return ZStack(alignment: .topLeading) {
+            Rectangle().fill(d == store.today ? Color.accentColor.opacity(0.05) : Color.clear)
+            if d == store.today {
+                let now = TimeOfDay(Date())
+                Rectangle().fill(StatusColor.overdue).frame(height: 1.5).offset(y: CGFloat(now.seconds) / 3600 * hourHeight)
+            }
+            ForEach(timed) { e in
+                let sp = span(e.task)
+                block(e, minutes: sp.1)
+                    .offset(y: CGFloat(sp.0.seconds) / 3600 * hourHeight)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: hourHeight * 24, maxHeight: hourHeight * 24, alignment: .top)
+        .overlay(alignment: .leading) { Rectangle().fill(Color.primary.opacity(0.06)).frame(width: 0.5) }
+        .contentShape(Rectangle())
+        .onTapGesture { selected = d }
+        .dropDestination(for: TaskDragItem.self) { items, location in
+            let minutes = max(0, min(23 * 60 + 45, Int((location.y / hourHeight * 60 / 15).rounded()) * 15))
+            for i in items {
+                store.reschedule(i.id, to: d)
+                store.update(i.id) { t in
+                    if t.dueDate != nil { t.dueTime = TimeOfDay(hour: minutes / 60, minute: minutes % 60) } else { t.startTime = TimeOfDay(hour: minutes / 60, minute: minutes % 60) }
+                }
+            }
+            return true
+        }
+    }
+
+    /// Start time and length: start→due on the same day, otherwise an hour.
+    func span(_ t: TaskItem) -> (TimeOfDay, Int) {
+        if let s = t.startTime, let e = t.dueTime, t.startDate == nil || t.startDate == t.dueDate, e > s {
+            return (s, max(30, (e.seconds - s.seconds) / 60))
+        }
+        return (t.dueTime ?? t.startTime ?? TimeOfDay(hour: 9, minute: 0), 60)
+    }
+
+    func block(_ e: CalendarEntry, minutes: Int) -> some View {
+        let t = e.task
+        let color = store.project(t.projectId).map { Color(argb: $0.color) } ?? t.priority.color
+        return VStack(alignment: .leading, spacing: 1) {
+            Text(t.title).font(.system(size: 11.5, weight: .semibold)).lineLimit(minutes >= 60 ? 2 : 1).strikethrough(t.isCompleted)
+            if minutes >= 45, let time = t.dueTime ?? t.startTime { Text(Formats(store: store).time(time)).font(.system(size: 10)).opacity(0.8) }
+        }
+        .padding(.horizontal, 6).padding(.vertical, 4)
+        .frame(maxWidth: .infinity, minHeight: max(22, CGFloat(minutes) / 60 * hourHeight - 2), maxHeight: max(22, CGFloat(minutes) / 60 * hourHeight - 2), alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(color.opacity(e.projected || t.isCompleted ? 0.10 : 0.20)))
+        .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3).padding(.vertical, 3) }
+        .padding(.horizontal, 2)
+        .opacity(e.projected || t.isCompleted ? 0.6 : 1)
+        .draggable(TaskDragItem(id: t.id))
+        .onTapGesture(count: 2) { nav.open(t.id) }
+        .onTapGesture { nav.selectedTask = t.id }
+        .help(t.title)
     }
 }

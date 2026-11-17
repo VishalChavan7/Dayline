@@ -209,7 +209,7 @@ struct SearchView: View {
             if !r.notes.isEmpty {
                 Section {
                     ForEach(r.notes) { n in
-                        Button { nav.go(.notes); notesUI.editing = n.id } label: {
+                        Button { nav.go(.notes); notesUI.open(n.id) } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(n.title.isEmpty ? "Untitled note" : n.title).fontWeight(.medium)
                                 Text(NoteCodec.plainText(n.body)).font(.caption).foregroundStyle(.secondary).lineLimit(2)

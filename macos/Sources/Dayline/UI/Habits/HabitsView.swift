@@ -2,230 +2,312 @@ import SwiftUI
 import AppKit
 import DaylineCore
 
+enum HabitPeriod: String, CaseIterable, Identifiable {
+    case all = "All", morning = "Morning", afternoon = "Afternoon", evening = "Evening", anytime = "Anytime"
+    var id: String { rawValue }
+    var symbol: String {
+        switch self { case .all: "square.grid.2x2"; case .morning: "sunrise"; case .afternoon: "sun.max"; case .evening: "moon.stars"; case .anytime: "clock" }
+    }
+    static func of(_ h: Habit) -> HabitPeriod {
+        guard let t = h.reminderTime else { return .anytime }
+        return t.hour < 12 ? .morning : t.hour < 17 ? .afternoon : .evening
+    }
+}
+
+/// Habits, inspired by habit-tracker apps: pick a day, tap a ring to check in, see streaks on the right.
 struct HabitsView: View {
     @EnvironmentObject var store: Store
-    @State private var editing: Habit?
-    @State private var detail: Int64?
+    @EnvironmentObject var nav: Navigator
+    @State private var day = Day.today()
+    @State private var period: HabitPeriod = .all
+    @State private var selected: Int64?
     @State private var showArchived = false
 
     var body: some View {
-        let habits = store.activeHabits
+        let all = store.activeHabits
         let archived = store.data.habits.filter(\.isArchived)
         Group {
-            if habits.isEmpty && archived.isEmpty {
-                EmptyState(symbol: "flame", title: "Build a habit", message: "Track daily habits, specific days, or a number of times a week — with streaks that forgive unscheduled days.")
-                    .overlay(alignment: .bottom) { Button("New Habit") { editing = newHabit() }.buttonStyle(.borderedProminent).padding(.bottom, 80) }
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HabitWeekHeader()
-                        ForEach(habits) { h in HabitRow(habit: h, onOpen: { detail = h.id }, onEdit: { editing = h }) }
-                        if !archived.isEmpty {
-                            DisclosureGroup("Archived (\(archived.count))", isExpanded: $showArchived) {
-                                ForEach(archived) { h in HabitRow(habit: h, onOpen: { detail = h.id }, onEdit: { editing = h }).opacity(0.6) }
-                            }
-                            .padding(.top, 8)
-                        }
-                    }
-                    .padding(24)
-                    .frame(maxWidth: 980)
-                    .frame(maxWidth: .infinity)
+            if all.isEmpty && archived.isEmpty {
+                IllustratedEmpty(title: "Grow a new habit", message: "Track every day, specific days, or a number of times a week. Streaks forgive the days you didn't plan.") {
+                    SproutArt(color: Destination.habits.tint)
                 }
+                .overlay(alignment: .bottom) {
+                    Button { newHabit() } label: { Label("New Habit", systemImage: "plus") }.glassButton(prominent: true).controlSize(.large).padding(.bottom, 70)
+                }
+            } else {
+                HStack(spacing: 0) {
+                    list(all, archived)
+                    if let id = selected, store.habit(id) != nil {
+                        HabitDetailPane(habitId: id, day: day) { selected = nil }
+                            .frame(width: 340)
+                            .glass(Radius.panel)
+                            .padding([.vertical, .trailing], 16)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                }
+                .animation(.snappy, value: selected)
             }
         }
         .navigationTitle("Habits")
-        .toolbar { Button { editing = newHabit() } label: { Label("New Habit", systemImage: "flame").labelStyle(.titleAndIcon) } }
-        .sheet(item: $editing) { h in HabitEditor(habit: h) }
-        .sheet(item: Binding(get: { detail.map(IdBox.init) }, set: { detail = $0?.id })) { b in HabitDetail(habitId: b.id) }
     }
 
-    func newHabit() -> Habit { Habit(id: 0, name: "", color: Palette.itemColors[store.data.habits.count % Palette.itemColors.count], startDate: store.today) }
-}
+    func newHabit() {
+        nav.editingHabit = Habit(id: 0, name: "", color: Palette.itemColors[store.data.habits.count % Palette.itemColors.count], startDate: store.today)
+    }
 
-struct IdBox: Identifiable { let id: Int64 }
-
-struct HabitWeekHeader: View {
-    @EnvironmentObject var store: Store
-    var body: some View {
-        HStack(spacing: 12) {
-            Spacer()
-            ForEach(lastDays(store.today), id: \.self) { d in
-                VStack(spacing: 1) {
-                    Text(d.weekday.short.prefix(2)).font(.caption2)
-                    Text("\(d.dayOfMonth)").font(.caption.weight(d == store.today ? .bold : .regular))
+    func list(_ all: [Habit], _ archived: [Habit]) -> some View {
+        let due = all.filter { HabitStreaks.isScheduled($0, day) && (period == .all || HabitPeriod.of($0) == period) }
+        let open = due.filter { !HabitStreaks.isDone($0, store.count($0.id, on: day)) }
+        let done = due.filter { HabitStreaks.isDone($0, store.count($0.id, on: day)) }
+        let other = all.filter { !HabitStreaks.isScheduled($0, day) && (period == .all || HabitPeriod.of($0) == period) }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .firstTextBaseline) {
+                    ScreenTitle(title: "Habits", subtitle: subtitle(done.count, due.count))
+                    Spacer()
+                    Button { newHabit() } label: { Label("New Habit", systemImage: "plus") }.glassButton(prominent: true)
                 }
-                .foregroundStyle(d == store.today ? Color.accentColor : .secondary)
-                .frame(width: 36)
+                DayPicker(day: $day)
+                HStack(spacing: 6) {
+                    ForEach(HabitPeriod.allCases) { p in
+                        Button { period = p } label: {
+                            Label(p.rawValue, systemImage: p.symbol).font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .foregroundStyle(period == p ? .white : .primary)
+                                .background(Capsule().fill(period == p ? Destination.habits.tint : Color.primary.opacity(0.06)))
+                        }.buttonStyle(.plain)
+                    }
+                }
+                if due.isEmpty && other.isEmpty {
+                    Text("No habits here.").foregroundStyle(.secondary).padding(.top, 20)
+                }
+                ForEach(open) { h in HabitCard(habit: h, day: day, selected: selected == h.id) { selected = h.id } }
+                if !done.isEmpty {
+                    Text("Done · \(done.count)").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).padding(.top, 4)
+                    ForEach(done) { h in HabitCard(habit: h, day: day, selected: selected == h.id) { selected = h.id } }
+                }
+                if !other.isEmpty {
+                    Text("Not planned for this day").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).padding(.top, 4)
+                    ForEach(other) { h in HabitCard(habit: h, day: day, selected: selected == h.id) { selected = h.id }.opacity(0.55) }
+                }
+                if !archived.isEmpty {
+                    DisclosureGroup("Archived (\(archived.count))", isExpanded: $showArchived) {
+                        VStack(spacing: 10) { ForEach(archived) { h in HabitCard(habit: h, day: day, selected: selected == h.id) { selected = h.id }.opacity(0.6) } }
+                            .padding(.top, 8)
+                    }
+                    .padding(.top, 8)
+                }
             }
-            // Matches the streak and consistency columns (12 + 70 + 12 + 44 + card padding 12).
-            Spacer().frame(width: 138)
+            .padding(24)
+            .frame(maxWidth: 820)
+            .frame(maxWidth: .infinity)
         }
     }
+
+    func subtitle(_ done: Int, _ total: Int) -> String {
+        let when = day == store.today ? "today" : Formats(store: store).date(day, relative: true).lowercased()
+        return total == 0 ? "Nothing planned \(when)" : "\(done) of \(total) done \(when)"
+    }
 }
 
-func lastDays(_ today: Day, _ n: Int = 7) -> [Day] { (0..<n).map { today.minusDays(n - 1 - $0) } }
+/// A week of days to pick from, with arrows to move week by week.
+struct DayPicker: View {
+    @EnvironmentObject var store: Store
+    @Binding var day: Day
+    var body: some View {
+        let days = DateRules.weekDays(day, store.weekStart)
+        HStack(spacing: 6) {
+            GlassIconButton(symbol: "chevron.left", help: "Previous week", size: 28) { day = day.minusWeeks(1) }
+            ForEach(days, id: \.self) { d in
+                let sel = d == day, isToday = d == store.today, future = d > store.today
+                Button { day = d } label: {
+                    VStack(spacing: 2) {
+                        Text(d.weekday.short.uppercased()).font(.system(size: 10, weight: .semibold, design: .rounded))
+                        Text("\(d.dayOfMonth)").font(.system(size: 16, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(sel ? .white : isToday ? Destination.habits.tint : .primary)
+                    .opacity(future && !sel ? 0.45 : 1)
+                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(sel ? Destination.habits.tint.gradient : Color.clear.gradient))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(future)
+            }
+            GlassIconButton(symbol: "chevron.right", help: "Next week", size: 28) { day = min(store.today, day.plusWeeks(1)) }
+        }
+        .padding(8)
+        .glass(Radius.card)
+    }
+}
 
-struct HabitRow: View {
+/// One habit for one day: tap the ring to check in.
+struct HabitCard: View {
     @EnvironmentObject var store: Store
     let habit: Habit
-    let onOpen: () -> Void
-    let onEdit: () -> Void
+    let day: Day
+    let selected: Bool
+    let open: () -> Void
 
     var body: some View {
-        let comps = store.completions(of: habit.id)
-        let stats = HabitStreaks.stats(habit, comps, today: store.today, weekStart: store.weekStart)
+        let count = store.count(habit.id, on: day)
+        let target = max(1, habit.targetPerDay)
+        let done = HabitStreaks.isDone(habit, count)
+        let stats = HabitStreaks.stats(habit, store.completions(of: habit.id), today: store.today, weekStart: store.weekStart)
         let color = Color(argb: habit.color)
-        Card(padding: 12) {
-            HStack(spacing: 12) {
-                ColorBadge(color: habit.color, symbol: Icons.symbol(habit.icon), size: 34)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(habit.name).font(.headline)
-                    Text(frequencyText).font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 14) {
+            ColorBadge(color: habit.color, symbol: Icons.symbol(habit.icon), size: 40)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(habit.name).font(.system(size: 15, weight: .semibold, design: .rounded)).strikethrough(done, color: .secondary)
+                HStack(spacing: 10) {
+                    Label("\(stats.currentStreak) \(stats.streakUnit == "weeks" ? "wk" : "d") streak", systemImage: "flame.fill")
+                        .foregroundStyle(stats.currentStreak > 0 ? StatusColor.streak : .secondary)
+                    Text(frequency).foregroundStyle(.secondary)
                 }
-                Spacer()
-                ForEach(lastDays(store.today), id: \.self) { d in DayCell(habit: habit, day: d, color: color) }
-                HStack(spacing: 4) {
-                    Image(systemName: "flame.fill").foregroundStyle(stats.currentStreak > 0 ? StatusColor.streak : .secondary.opacity(0.4))
-                    Text("\(stats.currentStreak)").font(.title3.weight(.semibold).monospacedDigit())
-                    Text(stats.streakUnit == "weeks" ? "wk" : "d").font(.caption).foregroundStyle(.secondary)
-                }
-                .frame(width: 70, alignment: .trailing)
-                .help("Current streak · best \(stats.longestStreak) \(stats.streakUnit)")
-                Text("\(Int((stats.consistency * 100).rounded()))%").font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
-                    .help("Consistency over the last 30 days")
+                .font(.system(size: 12, weight: .medium)).labelStyle(CompactLabel())
             }
+            Spacer()
+            if target > 1 {
+                Button { store.checkIn(habit.id, on: day, delta: -1) } label: { Image(systemName: "minus").frame(width: 24, height: 24) }
+                    .buttonStyle(.plain).glass(12, interactive: true).disabled(count == 0).help("Remove one")
+                Text("\(count)/\(target)").font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit()).frame(minWidth: 40)
+            }
+            Button {
+                withAnimation(.snappy) {
+                    if target > 1 && !done { store.checkIn(habit.id, on: day, delta: 1) } else { store.toggle(habit.id, on: day) }
+                }
+            } label: {
+                ZStack {
+                    Circle().stroke(color.opacity(0.18), lineWidth: 5)
+                    Circle().trim(from: 0, to: min(1, Double(count) / Double(target))).stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round)).rotationEffect(.degrees(-90))
+                    if done { Circle().fill(color).padding(6); Image(systemName: "checkmark").font(.system(size: 14, weight: .heavy)).foregroundStyle(.white) }
+                    else { Image(systemName: target > 1 ? "plus" : "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(color) }
+                }
+                .frame(width: 40, height: 40)
+                .contentShape(Circle())
+                .animation(.snappy, value: count)
+            }
+            .buttonStyle(.plain)
+            .help(done ? "Done — click to undo" : target > 1 ? "Add a check-in" : "Mark as done")
         }
+        .padding(14)
+        .glass(Radius.card, tint: selected ? color : nil)
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(selected ? color.opacity(0.6) : .clear, lineWidth: 1.5))
         .contentShape(Rectangle())
-        .onTapGesture(count: 2, perform: onOpen)
+        .onTapGesture(perform: open)
         .contextMenu {
-            Button("Details", action: onOpen)
-            Button("Edit…", action: onEdit)
+            Button("Edit…") { open() }
             Button(habit.isArchived ? "Unarchive" : "Archive") { store.setArchived(habit: habit.id, !habit.isArchived) }
             Divider()
             Button("Delete", role: .destructive) { store.deleteHabit(habit.id) }
         }
     }
 
-    var frequencyText: String {
+    var frequency: String {
         var s: String
         switch habit.frequency {
         case .DAILY: s = "Every day"
-        case .SPECIFIC_DAYS: s = habit.weekdays.sorted().map(\.short).joined(separator: ", ")
+        case .SPECIFIC_DAYS: s = habit.weekdays.sorted().map(\.short).joined(separator: " ")
         case .WEEKLY_TARGET: s = "\(habit.timesPerWeek)× a week"
         }
-        if habit.targetPerDay > 1 { s += " · \(habit.targetPerDay) a day" }
         if let t = habit.reminderTime { s += " · " + Formats(store: store).time(t) }
         return s
     }
 }
 
-struct DayCell: View {
+/// Right-hand panel: streaks, completion rate and a month calendar.
+struct HabitDetailPane: View {
     @EnvironmentObject var store: Store
-    let habit: Habit
-    let day: Day
-    let color: Color
-
-    var body: some View {
-        let count = store.count(habit.id, on: day)
-        let done = HabitStreaks.isDone(habit, count)
-        let scheduled = HabitStreaks.isScheduled(habit, day)
-        let future = day > store.today
-        Button {
-            withAnimation(.snappy) {
-                if habit.targetPerDay > 1 && !done && NSEvent.modifierFlags.contains(.option) == false { store.checkIn(habit.id, on: day, delta: 1) }
-                else { store.toggle(habit.id, on: day) }
-            }
-        } label: {
-            ZStack {
-                Circle().fill(done ? color : (scheduled ? color.opacity(0.12) : Color.clear))
-                Circle().strokeBorder(color.opacity(scheduled ? 0.35 : 0.12), lineWidth: 1)
-                if done { Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.white) }
-                else if count > 0 { Text("\(count)").font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(color) }
-            }
-            .frame(width: 26, height: 26)
-            .frame(width: 36)
-        }
-        .buttonStyle(.plain)
-        .disabled(future || day < habit.startDate)
-        .opacity(future ? 0.3 : 1)
-        .help(habit.targetPerDay > 1 ? "\(count) of \(habit.targetPerDay) — click to add, ⌥-click to clear" : (done ? "Done" : "Mark as done"))
-        .contextMenu {
-            if habit.targetPerDay > 1 {
-                Button("Add One") { store.checkIn(habit.id, on: day, delta: 1) }
-                Button("Remove One") { store.checkIn(habit.id, on: day, delta: -1) }
-            }
-            Button(done ? "Mark as Not Done" : "Mark as Done") { store.toggle(habit.id, on: day) }
-        }
-    }
-}
-
-struct HabitDetail: View {
-    @EnvironmentObject var store: Store
-    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var nav: Navigator
     let habitId: Int64
-    @State private var editing: Habit?
+    let day: Day
+    let close: () -> Void
+    @State private var month = Day.today()
+    @State private var confirmDelete = false
 
     var body: some View {
         if let h = store.habit(habitId) {
             let comps = store.completions(of: h.id)
             let s = HabitStreaks.stats(h, comps, today: store.today, weekStart: store.weekStart)
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 12) {
-                    ColorBadge(color: h.color, symbol: Icons.symbol(h.icon), size: 44)
-                    VStack(alignment: .leading) {
-                        Text(h.name).font(.title2.weight(.semibold))
-                        if !h.description.isEmpty { Text(h.description).foregroundStyle(.secondary) }
+            let color = Color(argb: h.color)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        ColorBadge(color: h.color, symbol: Icons.symbol(h.icon), size: 44)
+                        VStack(alignment: .leading) {
+                            Text(h.name).font(.system(size: 18, weight: .bold, design: .rounded))
+                            if !h.description.isEmpty { Text(h.description).font(.callout).foregroundStyle(.secondary) }
+                        }
+                        Spacer()
+                        GlassIconButton(symbol: "xmark", help: "Close", size: 26, action: close)
                     }
-                    Spacer()
-                    Button("Edit") { editing = h }
-                    Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible())], spacing: 10) {
+                        tile("Current streak", "\(s.currentStreak)", s.streakUnit, "flame.fill", StatusColor.streak)
+                        tile("Best streak", "\(s.longestStreak)", s.streakUnit, "trophy.fill", Color(hex: 0xEAB308))
+                        tile("Last 30 days", "\(Int((s.consistency * 100).rounded()))%", "completed", "chart.line.uptrend.xyaxis", color)
+                        tile("Total", "\(s.totalCompletions)", "days done", "checkmark.seal.fill", StatusColor.success)
+                    }
+                    HStack {
+                        Text(month.date().formatted(.dateTime.month(.wide).year())).font(.system(size: 15, weight: .bold, design: .rounded))
+                        Spacer()
+                        Button { month = month.minusMonths(1) } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
+                        Button { month = month.plusMonths(1) } label: { Image(systemName: "chevron.right") }.buttonStyle(.borderless).disabled(month.firstOfMonth >= store.today.firstOfMonth)
+                    }
+                    MonthDots(habit: h, month: month)
+                    HStack {
+                        Button("Edit") { nav.editingHabit = h }.glassButton()
+                        Button(h.isArchived ? "Unarchive" : "Archive") { store.setArchived(habit: h.id, !h.isArchived) }.glassButton()
+                        Spacer()
+                        Button(role: .destructive) { confirmDelete = true } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("Delete habit")
+                    }
                 }
-                HStack(spacing: 12) {
-                    stat("Current streak", "\(s.currentStreak)", s.streakUnit, "flame.fill", StatusColor.streak)
-                    stat("Best streak", "\(s.longestStreak)", s.streakUnit, "trophy.fill", .yellow)
-                    stat("Consistency", "\(Int((s.consistency * 100).rounded()))%", "last 30 days", "chart.line.uptrend.xyaxis", .accentColor)
-                    stat("Check-ins", "\(s.totalCompletions)", "days done", "checkmark.circle.fill", StatusColor.success)
-                }
-                Text("Last 26 weeks").font(.headline)
-                HabitHeatmap(habit: h, completions: comps)
+                .padding(18)
             }
-            .padding(22)
-            .frame(width: 640)
-            .sheet(item: $editing) { HabitEditor(habit: $0) }
+            .confirmationDialog("Delete “\(h.name)” and its history?", isPresented: $confirmDelete) {
+                Button("Delete Habit", role: .destructive) { store.deleteHabit(h.id); close() }
+            }
         }
     }
 
-    func stat(_ title: String, _ value: String, _ unit: String, _ symbol: String, _ color: Color) -> some View {
-        Card(padding: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Label(title, systemImage: symbol).font(.caption).foregroundStyle(color)
-                Text(value).font(.title.weight(.bold).monospacedDigit())
-                Text(unit).font(.caption).foregroundStyle(.secondary)
-            }
+    func tile(_ title: String, _ value: String, _ unit: String, _ symbol: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(title, systemImage: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+            Text(value).font(.system(size: 24, weight: .bold, design: .rounded).monospacedDigit())
+            Text(unit).font(.caption).foregroundStyle(.secondary)
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(Color.primary.opacity(0.05)))
     }
 }
 
-struct HabitHeatmap: View {
+/// A month of days, filled where the habit was done.
+struct MonthDots: View {
     @EnvironmentObject var store: Store
     let habit: Habit
-    let completions: [HabitCompletion]
+    let month: Day
     var body: some View {
-        let today = store.today
-        let start = DateRules.startOfWeek(today, store.weekStart).minusWeeks(25)
-        let counts = Dictionary(completions.map { ($0.date, $0.count) }, uniquingKeysWith: +)
+        let grid = DateRules.monthGrid(month, store.weekStart)
         let color = Color(argb: habit.color)
-        HStack(alignment: .top, spacing: 3) {
-            ForEach(0..<26, id: \.self) { w in
-                VStack(spacing: 3) {
-                    ForEach(0..<7, id: \.self) { d in
-                        let day = start.plusDays(w * 7 + d)
-                        let c = counts[day] ?? 0
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(day > today ? Color.clear : c == 0 ? Color.primary.opacity(HabitStreaks.isScheduled(habit, day) ? 0.08 : 0.03)
-                                  : color.opacity(HabitStreaks.isDone(habit, c) ? 1 : 0.45))
-                            .frame(width: 18, height: 18)
-                            .help("\(Formats(store: store).date(day, relative: false)): \(c)")
+        VStack(spacing: 6) {
+            HStack(spacing: 0) {
+                ForEach(DateRules.orderedWeekdays(store.weekStart), id: \.self) { w in Text(w.letter).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity) }
+            }
+            ForEach(0..<6, id: \.self) { r in
+                HStack(spacing: 0) {
+                    ForEach(0..<7, id: \.self) { c in
+                        let d = grid[r * 7 + c]
+                        let n = store.count(habit.id, on: d)
+                        let done = HabitStreaks.isDone(habit, n)
+                        let inMonth = d.month == month.month
+                        Text(inMonth ? "\(d.dayOfMonth)" : "")
+                            .font(.system(size: 11, weight: done ? .bold : .regular, design: .rounded).monospacedDigit())
+                            .foregroundStyle(done ? .white : d > store.today ? .secondary : .primary)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(done ? color : n > 0 ? color.opacity(0.3) : (inMonth && HabitStreaks.isScheduled(habit, d) && !(d > store.today) ? color.opacity(0.08) : .clear)))
+                            .overlay(Circle().strokeBorder(d == store.today && inMonth ? color : .clear, lineWidth: 1.5))
+                            .frame(maxWidth: .infinity)
+                            .onTapGesture { if inMonth && !(d > store.today) { store.toggle(habit.id, on: d) } }
                     }
                 }
             }
@@ -290,3 +372,4 @@ struct HabitEditor: View {
         .frame(width: 460)
     }
 }
+struct IdBox: Identifiable { let id: Int64 }

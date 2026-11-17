@@ -48,13 +48,17 @@ enum ScreenshotMode {
             try? await Task.sleep(for: .seconds(1.2))
             capture(window, dir.appendingPathComponent("inspector-\(mode).png"))
             s.nav.showInspector = false
-            // Note editor
+            // Note open in the editor
             s.nav.go(.notes)
-            s.notesUI.editing = s.store.data.notes.first?.id
+            if let id = s.store.data.notes.first?.id { s.notesUI.open(id) }
             try? await Task.sleep(for: .seconds(1.5))
-            if let sheet = window.attachedSheet { capture(sheet, dir.appendingPathComponent("note-\(mode).png")) }
-            s.notesUI.editing = nil
-            try? await Task.sleep(for: .seconds(0.8))
+            capture(window, dir.appendingPathComponent("note-\(mode).png"))
+            // Calendar week (time grid)
+            UserDefaults.standard.set("Week", forKey: "calendar.mode")
+            s.nav.go(.calendar)
+            try? await Task.sleep(for: .seconds(1.2))
+            capture(window, dir.appendingPathComponent("calendar-week-\(mode).png"))
+            UserDefaults.standard.set("Month", forKey: "calendar.mode")
             // New task sheet
             s.nav.newTaskDraft = TaskDraft(task: TaskItem(id: 0, title: "Book flights for the offsite"))
             try? await Task.sleep(for: .seconds(1.2))

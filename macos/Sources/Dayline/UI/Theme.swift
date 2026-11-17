@@ -135,14 +135,14 @@ struct Formats {
 }
 
 struct Card<Content: View>: View {
-    var padding: CGFloat = 16
+    var padding: CGFloat = 18
+    var tint: Color?
     @ViewBuilder var content: Content
     var body: some View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.07)))
+            .glass(Radius.card, tint: tint)
     }
 }
 
@@ -230,7 +230,7 @@ struct Ring: View {
     var body: some View {
         ZStack {
             Circle().stroke(color.opacity(0.15), lineWidth: lineWidth)
-            Circle().trim(from: 0, to: max(0.0001, min(1, progress)))
+            Circle().trim(from: 0, to: min(1, max(0, progress)))
                 .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.spring(duration: 0.6), value: progress)

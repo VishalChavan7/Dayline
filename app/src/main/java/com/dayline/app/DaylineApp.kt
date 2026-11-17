@@ -1,6 +1,8 @@
 package com.dayline.app
 
 import android.app.Application
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.dayline.app.core.common.ReminderSync
@@ -37,6 +39,7 @@ class DaylineApp : Application(), Configuration.Provider {
     @Inject lateinit var notes: com.dayline.app.core.data.repository.NoteRepository
     @Inject lateinit var projects: com.dayline.app.core.data.repository.ProjectRepository
     @Inject lateinit var settingsRepo: com.dayline.app.core.data.prefs.SettingsRepository
+    @Inject lateinit var googleSync: com.dayline.app.sync.GoogleSync
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -58,13 +61,23 @@ class DaylineApp : Application(), Configuration.Provider {
             }
             combine(tasks.items, habits.completions, habits.habits, notes.notes, combine(projects.projects, projects.lists, settingsRepo.settings) { a, b, c -> Triple(a, b, c) }) { _, _, _, _, _ -> Unit }
                 .drop(1)
-                .debounce(4_000)
+                .debounce(2_500)
                 .collect {
                     if (settingsRepo.sync.first().enabled) {
                         SyncScheduler.schedulePeriodic(this@DaylineApp)
-                        SyncScheduler.soon(this@DaylineApp, delaySeconds = 10)
+                        SyncScheduler.soon(this@DaylineApp, delaySeconds = 1)
                     }
                 }
+        }
+        // While Dayline is on screen: catch up straight away, then pick up the other device's changes every 20 s.
+        val process = androidx.lifecycle.ProcessLifecycleOwner.get()
+        process.lifecycleScope.launch {
+            process.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                while (true) {
+                    if (settingsRepo.sync.first().enabled) runCatching { googleSync.syncNow() }
+                    kotlinx.coroutines.delay(20_000)
+                }
+            }
         }
         // New versions from GitHub Releases: checked twice a day, downloaded in the background.
         if (!BuildConfig.DEBUG) com.dayline.app.update.UpdateScheduler.schedulePeriodic(this)
