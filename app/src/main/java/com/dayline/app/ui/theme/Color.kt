@@ -159,7 +159,6 @@ object ThemeStyles {
     )
 
     fun gradient(id: Int): Gradient? = gradients.firstOrNull { it.id == id }
-    fun isStyle(id: Int): Boolean = id == MONOCHROME || id == DYNAMIC_GRADIENT || gradient(id) != null
 }
 
 /** Black, greys and white. */

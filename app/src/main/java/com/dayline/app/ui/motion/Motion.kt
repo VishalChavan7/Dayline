@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.launch
 
 /**
@@ -30,16 +29,11 @@ import kotlinx.coroutines.launch
  * "bouncy" expressive feel; effects springs never overshoot (used for colour/alpha).
  */
 object Motion {
-    fun <T> spatial(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.72f, stiffness = 380f)
-    fun <T> spatialFast(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.62f, stiffness = 800f)
-    fun <T> spatialSlow(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.78f, stiffness = 200f)
     fun <T> bouncy(): FiniteAnimationSpec<T> = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f)
     fun <T> effects(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 1600f)
 
     /** iOS-like ease for indicator slides: quick, settles without visible wobble. */
     fun <T> glide(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 420f)
-
-    val slideOffset: FiniteAnimationSpec<IntOffset> = spring(dampingRatio = 0.9f, stiffness = 380f, visibilityThreshold = IntOffset(1, 1))
 }
 
 /**

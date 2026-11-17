@@ -71,7 +71,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dayline.app.core.data.prefs.SettingsRepository
 import com.dayline.app.core.model.AppSettings
-import com.dayline.app.core.model.TaskList
 import com.dayline.app.core.model.TimeFormat
 import com.dayline.app.ui.calendar.CalendarScreen
 import com.dayline.app.ui.common.Formats
@@ -83,7 +82,6 @@ import com.dayline.app.ui.habits.HabitDetailScreen
 import com.dayline.app.ui.habits.HabitEditorScreen
 import com.dayline.app.ui.habits.HabitsScreen
 import com.dayline.app.ui.more.MoreScreen
-import com.dayline.app.ui.motion.Motion
 import com.dayline.app.ui.motion.rememberHaptics
 import com.dayline.app.ui.notes.NoteEditorScreen
 import com.dayline.app.ui.notes.NotesScreen
@@ -100,7 +98,6 @@ import com.dayline.app.ui.tasks.TaskEditorScreen
 import com.dayline.app.ui.tasks.TaskListMode
 import com.dayline.app.ui.tasks.TaskListScreen
 import com.dayline.app.ui.theme.DaylineTheme
-import com.dayline.app.ui.theme.Palette
 import com.dayline.app.ui.today.TodayScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted

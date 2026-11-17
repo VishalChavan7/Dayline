@@ -11,11 +11,7 @@ enum class Priority(val level: Int, val label: String) {
     LOW(1, "Low"),
     MEDIUM(2, "Medium"),
     HIGH(3, "High"),
-    URGENT(4, "Urgent");
-
-    companion object {
-        fun fromLevel(level: Int): Priority = entries.firstOrNull { it.level == level } ?: MEDIUM
-    }
+    URGENT(4, "Urgent"),
 }
 
 enum class RecurrenceFrequency(val label: String, val unit: String) {
@@ -79,7 +75,6 @@ data class Task(
 ) {
     /** The date a task is "scheduled" on: due date first, otherwise start date. */
     val scheduledDate: LocalDate? get() = dueDate ?: startDate
-    val isAllDay: Boolean get() = dueTime == null && startTime == null
 
     fun isOverdue(today: LocalDate): Boolean = !isCompleted && dueDate != null && dueDate.isBefore(today)
 }
@@ -197,5 +192,3 @@ data class FocusSession(
 ) {
     val focusedMinutes: Int get() = (focusedMillis / 60_000L).toInt()
 }
-
-data class TaskDependency(val taskId: Long, val dependsOnTaskId: Long)

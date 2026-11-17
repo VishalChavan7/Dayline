@@ -3,12 +3,7 @@ package com.dayline.app.ui.notes
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.material.icons.outlined.Description
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.rounded.Checklist
@@ -19,7 +14,6 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Check
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -68,7 +62,6 @@ import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
 import androidx.compose.material.icons.rounded.Close
@@ -91,7 +84,6 @@ import androidx.compose.material.icons.rounded.StrikethroughS
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -152,7 +144,6 @@ import com.dayline.app.core.domain.NoteCodec
 import com.dayline.app.core.model.Note
 import com.dayline.app.core.model.Project
 import com.dayline.app.core.model.TaskItem
-import com.dayline.app.ui.common.LocalFormats
 import com.dayline.app.ui.components.ConfirmDialog
 import com.dayline.app.ui.components.DaylineTopBar
 import com.dayline.app.ui.components.EmptyState
@@ -166,7 +157,6 @@ import com.dayline.app.ui.search.CompactSearchField
 import com.dayline.app.ui.theme.DaylineTheme
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichText
-import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -745,8 +735,6 @@ class NoteEditorViewModel @Inject constructor(
     }
 
     fun update(transform: (Note) -> Note) = _state.update { it.copy(note = transform(it.note), dirty = true) }
-    fun markDirty() = _state.update { it.copy(dirty = true) }
-
     fun addCheck(after: Long? = null): Long {
         val key = nextKey++
         _state.update { s ->
@@ -1026,7 +1014,6 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
         ResponsiveBox(Modifier.padding(inner)) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val page = maxHeight
-                val bodyFocus = remember { androidx.compose.ui.focus.FocusRequester() }
                 // Tags live beside the note (tap one to change its icon or remove it).
                 val labels = n.labels()
                 val scroll = rememberScrollState()
@@ -1412,23 +1399,8 @@ private fun FormatButton(icon: ImageVector, label: String, active: Boolean, enab
     }
 }
 
-@Composable
-private fun SwatchGrid(colors: List<Color>, onClear: () -> Unit, onPick: (Color) -> Unit) {
-    Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.width(196.dp)) {
-            colors.forEach { c ->
-                Box(Modifier.size(32.dp).clip(CircleShape).background(c).clickable { onPick(c) })
-            }
-        }
-        TextButton(onClick = onClear) { Text("None") }
-    }
-}
-
 
 // ---------------------------------------------------------------- editor helpers
-
-private val ORDERED_LINE = Regex("(^|\\s)\\d+\\. ")
-private val LIST_PREFIX = Regex("^(\\d+\\. |[•◦▪] )")
 
 /** The word around [index] (when the caret sits inside or at the end of one). */
 internal fun RichTextState.wordAt(index: Int): androidx.compose.ui.text.TextRange? {
@@ -1478,28 +1450,6 @@ internal fun RichTextState.paragraphAt(index: Int): IntRange {
     val ranges = paragraphRanges()
     return ranges.firstOrNull { index >= it.first && index <= it.last + 1 && (index <= it.last || ranges.none { r -> r.first == index }) }
         ?: ranges.lastOrNull() ?: (0 until 0)
-}
-
-/**
- * Removes the selected paragraphs (or just the one with the caret) and returns their text, for
- * turning written lines into checklist items. Returns empty when there's nothing to convert.
- */
-internal fun RichTextState.takeLinesForChecklist(): List<String> {
-    val t = annotatedString.text
-    if (t.isBlank()) return emptyList()
-    val sel = selection
-    val ranges = paragraphRanges()
-    val picked = if (sel.collapsed) listOf(paragraphAt(sel.min))
-    else ranges.filter { it.first < sel.max && it.last + 1 > sel.min }.ifEmpty { listOf(paragraphAt(sel.min)) }
-    val lines = picked.flatMap { r ->
-        t.substring(r.first.coerceIn(0, t.length), (r.last + 1).coerceIn(0, t.length)).split('\n')
-    }.map { it.trim().replace(LIST_PREFIX, "").trim() }.filter { it.isNotEmpty() }
-    if (lines.isEmpty()) return emptyList()
-    val from = picked.first().first.coerceIn(0, t.length)
-    val to = (picked.last().last + 1).coerceIn(0, t.length)
-    runCatching { removeTextRange(androidx.compose.ui.text.TextRange(from, to)) }
-    selection = androidx.compose.ui.text.TextRange(from.coerceAtMost(annotatedString.text.length))
-    return lines
 }
 
 /**
@@ -1629,16 +1579,6 @@ internal fun RichTextState.paragraphText(r: IntRange): String {
 internal fun List<IntRange>.lineEnd(state: RichTextState, k: Int): Int {
     val r = getOrNull(k) ?: return state.annotatedString.text.length
     return r.first + state.paragraphText(r).length
-}
-
-/** Edits the note through its HTML (keeps every paragraph in place) and puts the caret back. */
-internal fun RichTextState.rewrite(edit: (String) -> String, caret: (List<IntRange>) -> Int) {
-    val html = toHtml()
-    val out = edit(html)
-    if (out == html) return
-    setHtml(withExplicitAlignment(out))
-    val pos = caret(paragraphRanges()).coerceIn(0, annotatedString.text.length)
-    selection = androidx.compose.ui.text.TextRange(pos)
 }
 
 

@@ -58,7 +58,6 @@ import com.dayline.app.core.common.TimeProvider
 import com.dayline.app.core.data.prefs.SettingsRepository
 import com.dayline.app.core.data.repository.HabitRepository
 import com.dayline.app.core.data.repository.TaskRepository
-import com.dayline.app.core.domain.FocusPhase
 import com.dayline.app.core.domain.FocusTimerState
 import com.dayline.app.core.domain.HabitStreakCalculator
 import com.dayline.app.core.domain.TimerStatus

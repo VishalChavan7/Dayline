@@ -23,7 +23,6 @@ import com.dayline.app.core.model.ThemeMode
 /** Centralised spacing and sizing tokens. */
 @Immutable
 object Dimens {
-    val xxs: Dp = 2.dp
     val xs: Dp = 4.dp
     val sm: Dp = 8.dp
     val md: Dp = 12.dp
@@ -125,9 +124,3 @@ val LocalBrandGradient = androidx.compose.runtime.staticCompositionLocalOf<Brand
 fun brandContainerBrush(): androidx.compose.ui.graphics.Brush =
     LocalBrandGradient.current?.let { androidx.compose.ui.graphics.Brush.linearGradient(it.soft) }
         ?: androidx.compose.ui.graphics.SolidColor(androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer)
-
-/** Vivid gradient for strong accents (rings, main buttons), or the plain primary colour. */
-@Composable
-fun brandStrongBrush(): androidx.compose.ui.graphics.Brush =
-    LocalBrandGradient.current?.let { androidx.compose.ui.graphics.Brush.linearGradient(it.strong) }
-        ?: androidx.compose.ui.graphics.SolidColor(androidx.compose.material3.MaterialTheme.colorScheme.primary)

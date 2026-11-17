@@ -9,13 +9,11 @@ data class ParsedQuickAdd(
     val date: LocalDate? = null,
     val priority: Priority? = null,
     val tags: List<String> = emptyList(),
-    /** Name after "@", matched against lists/projects by the caller. */
-    val listName: String? = null,
 )
 
 /**
  * Lightweight natural-language shortcuts for Quick Add:
- * "today", "tomorrow", weekday names, "next week", "!high" / "!1".."!4", "#tag", "@List".
+ * "today", "tomorrow", weekday names, "next week", "!high" / "!1".."!4", "#tag".
  * Words are only treated as shortcuts when they stand alone, so titles keep their meaning.
  */
 object QuickAddParser {
@@ -37,7 +35,6 @@ object QuickAddParser {
         var date: LocalDate? = null
         var priority: Priority? = null
         val tags = mutableListOf<String>()
-        var listName: String? = null
         var i = 0
         while (i < tokens.size) {
             val raw = tokens[i]
@@ -46,7 +43,6 @@ object QuickAddParser {
             when {
                 tok in priorityWords -> priority = priorityWords.getValue(tok)
                 raw.startsWith("#") && raw.length > 1 -> tags += raw.drop(1)
-                raw.startsWith("@") && raw.length > 1 -> listName = raw.drop(1).replace('_', ' ')
                 date == null && (tok == "today" || tok == "tod") -> date = today
                 date == null && (tok == "tomorrow" || tok == "tmr" || tok == "tmrw") -> date = today.plusDays(1)
                 date == null && tok == "next" && nextTok == "week" -> {
@@ -60,6 +56,6 @@ object QuickAddParser {
             }
             i++
         }
-        return ParsedQuickAdd(kept.joinToString(" "), date, priority, tags.distinct(), listName)
+        return ParsedQuickAdd(kept.joinToString(" "), date, priority, tags.distinct())
     }
 }

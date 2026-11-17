@@ -62,11 +62,4 @@ object TaskGrouping {
     fun onDay(tasks: List<Task>, day: LocalDate): List<Task> = tasks.filter { t ->
         t.dueDate == day || (t.dueDate == null && t.startDate == day)
     }
-
-    /** Tasks whose start..due span covers the day (used for multi-day bars). */
-    fun spanning(tasks: List<Task>, day: LocalDate): List<Task> = tasks.filter { t ->
-        val s = t.startDate ?: t.dueDate
-        val e = t.dueDate ?: t.startDate
-        s != null && e != null && !day.isBefore(s) && !day.isAfter(e)
-    }
 }

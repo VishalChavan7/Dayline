@@ -66,14 +66,9 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -98,7 +93,6 @@ import com.dayline.app.core.model.Tag
 import com.dayline.app.core.model.ThemeMode
 import com.dayline.app.core.model.TimeFormat
 import com.dayline.app.ui.common.LocalFormats
-import com.dayline.app.ui.components.ColorSwatches
 import com.dayline.app.ui.components.ConfirmDialog
 import com.dayline.app.ui.components.DaylineCard
 import com.dayline.app.ui.components.EmptyState

@@ -4,12 +4,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.automirrored.rounded.StickyNote2
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
-import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.SelfImprovement
 import androidx.compose.material.icons.outlined.WbSunny
@@ -28,11 +26,6 @@ object Routes {
     const val ALL = "all"
     const val COMPLETED = "completed"
     const val STATS = "stats"
-    const val PROJECTS = "projects"
-    const val LISTS = "lists"
-    const val LIST = "list/{id}"
-    const val PROJECT = "project/{id}"
-    const val PROJECT_EDIT = "project/edit/{id}"
     const val FOCUS = "focus"
     const val FOCUS_PATTERN = "focus?task={task}"
     const val NOTES = "notes"
@@ -68,9 +61,6 @@ class AppNavigator(private val nav: NavHostController) {
     fun task(id: Long) = to("task/$id")
     fun newTask(date: LocalDate? = null, projectId: Long? = null, listId: Long? = null) =
         to("task/0?date=${date?.toEpochDay() ?: Long.MIN_VALUE}&project=${projectId ?: -1}&list=${listId ?: -1}")
-    fun project(id: Long) = to("project/$id")
-    fun list(id: Long) = to("list/$id")
-    fun editProject(id: Long) = to("project/edit/$id")
     fun habit(id: Long) = to("habit/$id")
     fun editHabit(id: Long) = to("habit/edit/$id")
     fun note(id: Long) = to("note/$id")

@@ -20,14 +20,6 @@ data class TaskItem(
 ) {
     val id: Long get() = task.id
     val isBlocked: Boolean get() = blockedBy.isNotEmpty()
-
-    /** Subtasks drive progress when present; otherwise the manual progress value is used. */
-    val progressFraction: Float
-        get() = when {
-            task.isCompleted -> 1f
-            subtasksTotal > 0 -> subtasksDone.toFloat() / subtasksTotal
-            else -> task.progress / 100f
-        }
 }
 
 data class TaskDetails(

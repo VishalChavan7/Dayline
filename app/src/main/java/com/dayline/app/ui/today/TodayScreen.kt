@@ -1,23 +1,16 @@
 package com.dayline.app.ui.today
 
 import androidx.compose.material.icons.rounded.Inbox
-import androidx.compose.foundation.layout.heightIn
 
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.automirrored.rounded.List
-import androidx.compose.material.icons.rounded.Workspaces
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import com.dayline.app.ui.components.CountPill
 import com.dayline.app.ui.components.DaylineTopBar
-import com.dayline.app.ui.components.ItemIconBadge
 import com.dayline.app.ui.components.LabeledIconButton
 import com.dayline.app.ui.components.ProgressRing
 import com.dayline.app.ui.components.rememberBarScroll
-import com.dayline.app.ui.motion.pressBounce
 import com.dayline.app.ui.navigation.FabDefaults
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,27 +19,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BarChart
-import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.FormatQuote
-import androidx.compose.material.icons.rounded.LocalFireDepartment
-import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Timer
@@ -54,15 +39,12 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Upcoming
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.WbSunny
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,8 +56,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -85,7 +65,6 @@ import com.dayline.app.core.domain.TimerStatus
 import com.dayline.app.core.model.DashboardSection
 import com.dayline.app.core.model.Priority
 import com.dayline.app.core.model.TaskItem
-import com.dayline.app.ui.common.IconCatalog
 import com.dayline.app.ui.common.LocalFormats
 import com.dayline.app.ui.components.BarChart
 import com.dayline.app.ui.components.CollapsibleCard
@@ -105,8 +84,6 @@ import com.dayline.app.ui.tasks.TaskActionsSheet
 import com.dayline.app.ui.theme.DaylineTheme
 import com.dayline.app.ui.theme.Dimens
 import com.dayline.app.ui.theme.StatusColors
-import com.dayline.app.ui.theme.containerOf
-import com.dayline.app.ui.theme.contentOf
 import kotlinx.coroutines.launch
 
 /** Callbacks for the dashboard, kept separate so the content can be rendered in previews and screenshot tests. */
@@ -465,37 +442,3 @@ private fun QuoteCard(state: TodayUiState) {
     }
 }
 
-@Composable
-private fun NewReminderDialog(onDismiss: () -> Unit, onSave: (String, java.time.LocalDateTime, Boolean) -> Unit) {
-    val formats = LocalFormats.current
-    var title by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf(java.time.LocalDate.now()) }
-    var time by remember { mutableStateOf(java.time.LocalTime.now().plusHours(1).withMinute(0).withSecond(0).withNano(0)) }
-    var pinned by remember { mutableStateOf(true) }
-    var pickDate by remember { mutableStateOf(false) }
-    var pickTime by remember { mutableStateOf(false) }
-    val at = date.atTime(time)
-    val valid = title.isNotBlank() && at.isAfter(java.time.LocalDateTime.now())
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("New reminder") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Dimens.sm)) {
-                androidx.compose.material3.OutlinedTextField(title, { title = it }, label = { Text("What should we remind you about?") }, singleLine = true)
-                Row(horizontalArrangement = Arrangement.spacedBy(Dimens.sm)) {
-                    androidx.compose.material3.AssistChip(onClick = { pickDate = true }, label = { Text(formats.relative(date, java.time.LocalDate.now())) })
-                    androidx.compose.material3.AssistChip(onClick = { pickTime = true }, label = { Text(formats.time(time)) })
-                }
-                if (!at.isAfter(java.time.LocalDateTime.now())) Text("Pick a time in the future", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Pin to dashboard", modifier = Modifier.weight(1f))
-                    androidx.compose.material3.Switch(pinned, { pinned = it })
-                }
-            }
-        },
-        confirmButton = { TextButton(enabled = valid, onClick = { onSave(title, at, pinned); onDismiss() }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-    if (pickDate) com.dayline.app.ui.components.DatePickerDialogHost(date, onDismiss = { pickDate = false }) { date = it }
-    if (pickTime) com.dayline.app.ui.components.TimePickerDialogHost(time, formats.is24Hour, onDismiss = { pickTime = false }) { time = it }
-}

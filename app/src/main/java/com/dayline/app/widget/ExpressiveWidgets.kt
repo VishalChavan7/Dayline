@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.ColorFilter
@@ -30,9 +29,7 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
-import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
@@ -43,10 +40,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.text.FontWeight
 import androidx.glance.unit.ColorProvider
 import com.dayline.app.R
-import com.dayline.app.core.domain.TimerStatus
 import kotlinx.coroutines.flow.first
-import java.time.format.TextStyle as JTextStyle
-import java.util.Locale
 
 /*
  * Five Material 3 Expressive widgets. Each one is a single expressive shape (cookie, flower, sunny

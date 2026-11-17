@@ -50,7 +50,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.Add
@@ -61,8 +60,6 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Event
-import androidx.compose.material.icons.rounded.Flag
-import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
@@ -75,7 +72,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,17 +81,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -135,7 +126,6 @@ import com.dayline.app.ui.components.TimePickerDialogHost
 import com.dayline.app.ui.components.priorityColor
 import com.dayline.app.ui.navigation.AppNavigator
 import com.dayline.app.ui.navigation.LocalSnackbar
-import com.dayline.app.ui.navigation.Routes
 import com.dayline.app.ui.theme.Dimens
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -613,13 +603,6 @@ private fun EditorRow(
         )
         if (onClear != null) IconButton(onClick = onClear, modifier = Modifier.size(40.dp)) { Icon(Icons.Rounded.Close, contentDescription = "Clear $label", modifier = Modifier.size(18.dp)) }
         else Spacer(Modifier.width(Dimens.md))
-    }
-}
-
-@Composable
-private fun ChipLine(text: String, onRemove: () -> Unit) {
-    Row(Modifier.padding(start = 40.dp)) {
-        InputChip(selected = false, onClick = onRemove, label = { Text(text) }, trailingIcon = { Icon(Icons.Rounded.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp)) })
     }
 }
 

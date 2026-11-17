@@ -32,7 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,9 +51,7 @@ import com.dayline.app.core.common.AppClock
 import com.dayline.app.core.data.repository.SearchRepository
 import com.dayline.app.core.data.repository.TaskRepository
 import com.dayline.app.core.model.SearchResults
-import com.dayline.app.ui.common.IconCatalog
 import com.dayline.app.ui.components.EmptyState
-import com.dayline.app.ui.components.ItemIconBadge
 import com.dayline.app.ui.components.ResponsiveBox
 import com.dayline.app.ui.components.SectionLabel
 import com.dayline.app.ui.components.TaskRow

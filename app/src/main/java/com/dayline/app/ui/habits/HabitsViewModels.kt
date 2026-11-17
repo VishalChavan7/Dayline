@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.LocalTime
 import javax.inject.Inject
 
 data class HabitRowState(
@@ -174,9 +173,5 @@ class HabitEditorViewModel @Inject constructor(
                 _state.update { it.copy(error = e.message) }
             }
         }
-    }
-
-    companion object {
-        val suggestedTimes: List<LocalTime> = listOf(LocalTime.of(7, 0), LocalTime.of(12, 30), LocalTime.of(18, 0), LocalTime.of(21, 30))
     }
 }

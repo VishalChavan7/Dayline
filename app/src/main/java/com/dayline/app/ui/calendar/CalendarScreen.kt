@@ -1,9 +1,7 @@
 package com.dayline.app.ui.calendar
 
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import com.dayline.app.ui.components.DaylineTopBar
 import com.dayline.app.ui.components.SegmentedPills
-import com.dayline.app.ui.components.rememberBarScroll
 import com.dayline.app.ui.navigation.FabDefaults
 
 import androidx.compose.foundation.background
@@ -11,7 +9,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,7 +17,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,22 +37,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Today
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,7 +66,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,7 +74,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dayline.app.core.domain.DateRules
 import com.dayline.app.ui.common.LocalFormats
-import com.dayline.app.ui.components.EmptyState
 import com.dayline.app.ui.components.ResponsiveBox
 import com.dayline.app.ui.components.TaskRow
 import com.dayline.app.ui.components.priorityColor
@@ -96,7 +83,6 @@ import com.dayline.app.ui.quickadd.QuickAddDefaults
 import com.dayline.app.ui.theme.DaylineTheme
 import com.dayline.app.ui.theme.Dimens
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.YearMonth
 import kotlin.math.roundToInt
 
@@ -143,7 +129,6 @@ fun CalendarContent(state: CalendarUiState, actions: CalendarActions) {
                     Text(
                         when (state.view) {
                             CalendarView.YEAR -> state.selected.year.toString()
-                            CalendarView.DAY -> formats.relative(state.selected, state.today)
                             else -> formats.monthYear(state.selected)
                         },
                         maxLines = 1,
@@ -184,8 +169,6 @@ fun CalendarContent(state: CalendarUiState, actions: CalendarActions) {
                         when (state.view) {
                             CalendarView.MONTH -> MonthView(state, actions)
                             CalendarView.WEEK -> WeekView(state, actions)
-                            CalendarView.DAY -> DayView(state, actions)
-                            CalendarView.AGENDA -> AgendaView(state, actions)
                             CalendarView.YEAR -> YearView(state, actions)
                         }
                     }
@@ -483,136 +466,6 @@ private fun WeekChip(text: String, color: Color, done: Boolean = false, faded: B
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (done || faded) 0.55f else 1f),
             textDecoration = if (done) TextDecoration.LineThrough else null,
         )
-    }
-}
-
-private val HourHeight: Dp = 60.dp
-
-/** All-day tasks on top, then a 24-hour timeline with timed tasks and focus sessions. */
-@Composable
-private fun DayView(state: CalendarUiState, actions: CalendarActions) {
-    val formats = LocalFormats.current
-    val date = state.selected
-    val entries = state.on(date)
-    val allDay = entries.filter { it.time == null }
-    val timed = entries.filter { it.time != null }
-    val focus = state.focus[date].orEmpty()
-    val scroll = rememberScrollState()
-    val density = LocalDensity.current
-    LaunchedEffect(date) { scroll.scrollTo(with(density) { (HourHeight * 7).toPx().toInt() }) }
-
-    Column(Modifier.fillMaxSize()) {
-        DayAgendaHeader(date, state, actions)
-        if (allDay.isNotEmpty()) {
-            Text("All day", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Dimens.lg, top = Dimens.sm))
-            Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
-                allDay.forEach { EntryRow(it, state, actions) }
-            }
-            HorizontalDivider(Modifier.padding(vertical = Dimens.xs))
-        }
-        Box(Modifier.fillMaxSize().verticalScroll(scroll)) {
-            Column {
-                (0..23).forEach { h ->
-                    Row(Modifier.height(HourHeight)) {
-                        Text(
-                            formats.time(LocalTime.of(h, 0)),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.width(64.dp).padding(start = Dimens.sm),
-                            maxLines = 1,
-                        )
-                        HorizontalDivider(Modifier.padding(top = 7.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-                }
-                Spacer(Modifier.height(120.dp))
-            }
-            val left = 68.dp
-            focus.forEach { f ->
-                val top = HourHeight * (f.start.toSecondOfDay() / 3600f)
-                val h = (HourHeight * ((f.end.toSecondOfDay() - f.start.toSecondOfDay()) / 3600f)).coerceAtLeast(22.dp)
-                Box(
-                    Modifier
-                        .padding(start = left, end = Dimens.lg)
-                        .offset(y = top + 8.dp)
-                        .fillMaxWidth()
-                        .height(h)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.tertiaryContainer)
-                        .padding(horizontal = Dimens.sm, vertical = 2.dp),
-                ) {
-                    Text("${f.label} · ${f.minutes}m", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer, maxLines = 1)
-                }
-            }
-            timed.forEachIndexed { index, e ->
-                val t = e.item.task
-                val start = t.startTime?.takeIf { t.startDate == date || t.dueDate == null } ?: e.time!!
-                val end = if (t.startTime != null && t.dueTime != null && t.startDate == t.dueDate) t.dueTime else start.plusMinutes(45)
-                val top = HourHeight * (start.toSecondOfDay() / 3600f)
-                val h = (HourHeight * ((end.toSecondOfDay() - start.toSecondOfDay()).coerceAtLeast(1800) / 3600f))
-                val c = priorityColor(t.priority)
-                Row(
-                    Modifier
-                        .padding(start = left + 12.dp * (index % 2), end = Dimens.lg)
-                        .offset(y = top + 8.dp)
-                        .fillMaxWidth()
-                        .height(h)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(c.copy(alpha = if (DaylineTheme.isDark) 0.30f else 0.16f))
-                        .clickable { actions.onOpen(e.item.id) }
-                        .padding(start = 0.dp),
-                ) {
-                    Box(Modifier.width(4.dp).fillMaxHeight().background(c))
-                    Column(Modifier.padding(horizontal = Dimens.sm, vertical = 4.dp)) {
-                        Text(t.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            textDecoration = if (t.isCompleted) TextDecoration.LineThrough else null)
-                        Text(formats.time(start), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            if (date == state.today) {
-                val now = LocalTime.now()
-                Box(
-                    Modifier
-                        .padding(start = left - 6.dp)
-                        .offset(y = HourHeight * (now.toSecondOfDay() / 3600f) + 8.dp)
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .background(MaterialTheme.colorScheme.error),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AgendaView(state: CalendarUiState, actions: CalendarActions) {
-    val formats = LocalFormats.current
-    val days = state.entries.keys.filter { !it.isBefore(state.selected) }.sorted()
-    if (days.isEmpty()) {
-        EmptyState(Icons.Rounded.EventAvailable, "A clear horizon", "Nothing scheduled in the next two months.")
-        return
-    }
-    LazyColumn(contentPadding = PaddingValues(bottom = 120.dp)) {
-        days.forEach { d ->
-            item(key = "h$d") {
-                Row(Modifier.fillMaxWidth().padding(start = Dimens.lg, end = Dimens.lg, top = Dimens.lg, bottom = Dimens.xs), verticalAlignment = Alignment.Bottom) {
-                    Text(formats.relative(d, state.today), style = MaterialTheme.typography.titleMedium,
-                        color = if (d == state.today) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                    Text(formats.date(d), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            state.focus[d]?.takeIf { it.isNotEmpty() }?.let { blocks ->
-                item(key = "f$d") {
-                    Row(Modifier.padding(horizontal = Dimens.xl, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Timer, null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(Dimens.sm))
-                        Text("Focused ${formats.minutes(blocks.sumOf { it.minutes })} in ${blocks.size} session${if (blocks.size > 1) "s" else ""}",
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            items(state.on(d), key = { "${it.item.id}-${it.date}-${it.isProjection}" }) { e -> EntryRow(e, state, actions) }
-        }
     }
 }
 

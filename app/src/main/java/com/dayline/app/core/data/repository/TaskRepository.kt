@@ -291,8 +291,6 @@ class TaskRepository @Inject constructor(
     suspend fun setPriority(taskIds: List<Long>, priority: Priority) =
         taskIds.forEach { id -> updateTask(id) { it.copy(priority = priority) } }
 
-    suspend fun setProgress(taskId: Long, progress: Int) = updateTask(taskId) { it.copy(progress = progress.coerceIn(0, 100)) }
-
     /** Moves the task to [date], keeping the start→due span. */
     suspend fun reschedule(taskId: Long, date: LocalDate?) = updateTask(taskId) { t ->
         when {

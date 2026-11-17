@@ -9,13 +9,10 @@
 .externalNativeBuild
 .cxx
 .kotlin
-
-# Local artifacts / tooling
 /outputs
 /.agent
-/.github/modernize
-*.zip
 *.apk
 *.aab
 *.jks
 *.keystore
+build-helper.sh

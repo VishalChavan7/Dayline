@@ -39,8 +39,6 @@ class ProjectRepository @Inject constructor(
     val projects: Flow<List<Project>> = dao.observeAll().map { l -> l.map { it.toModel() } }
     val lists: Flow<List<TaskList>> = dao.observeLists().map { l -> l.map { it.toModel() } }
 
-    fun observeProject(id: Long): Flow<Project?> = dao.observe(id).map { it?.toModel() }
-
     suspend fun saveProject(project: Project): Long {
         require(project.name.isNotBlank()) { "Project name can't be empty" }
         if (project.startDate != null && project.deadline != null) {

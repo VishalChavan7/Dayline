@@ -16,7 +16,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
@@ -459,21 +458,6 @@ fun StatTile(
         }
     }
 }
-
-/** Lays out tiles in a responsive grid: 2 columns on phones, more when wide. */
-@Composable
-fun TileGrid(modifier: Modifier = Modifier, minTileWidth: Dp = 150.dp, content: @Composable () -> Unit) {
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val columns = (maxWidth / minTileWidth).toInt().coerceIn(2, 4)
-        val gap = Dimens.sm
-        val tileWidth = (maxWidth - gap * (columns - 1)) / columns
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(gap)) {
-            androidx.compose.runtime.CompositionLocalProvider(LocalTileWidth provides tileWidth) { content() }
-        }
-    }
-}
-
-val LocalTileWidth = androidx.compose.runtime.compositionLocalOf { 160.dp }
 
 @Composable
 fun ConfirmDialog(

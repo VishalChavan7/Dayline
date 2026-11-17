@@ -24,9 +24,6 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun get(id: Long): TaskEntity?
 
-    @Query("SELECT * FROM tasks WHERE id IN (:ids)")
-    suspend fun getMany(ids: List<Long>): List<TaskEntity>
-
     @Insert
     suspend fun insert(task: TaskEntity): Long
 
@@ -51,18 +48,12 @@ interface TaskDao {
     )
     suspend fun search(q: String): List<TaskEntity>
 
-    @Query("SELECT * FROM tasks WHERE dueDate BETWEEN :from AND :to OR startDate BETWEEN :from AND :to")
-    fun observeBetween(from: LocalDate, to: LocalDate): Flow<List<TaskEntity>>
-
     // Subtasks
     @Query("SELECT * FROM subtasks ORDER BY taskId, position")
     fun observeAllSubtasks(): Flow<List<SubtaskEntity>>
 
     @Query("SELECT * FROM subtasks ORDER BY taskId, position")
     suspend fun getAllSubtasks(): List<SubtaskEntity>
-
-    @Query("SELECT * FROM subtasks WHERE taskId = :taskId ORDER BY position")
-    fun observeSubtasks(taskId: Long): Flow<List<SubtaskEntity>>
 
     @Query("SELECT * FROM subtasks WHERE taskId = :taskId ORDER BY position")
     suspend fun getSubtasks(taskId: Long): List<SubtaskEntity>
@@ -78,9 +69,6 @@ interface TaskDao {
 
     @Query("DELETE FROM subtasks WHERE taskId = :taskId AND id NOT IN (:keep)")
     suspend fun deleteSubtasksExcept(taskId: Long, keep: List<Long>)
-
-    @Query("DELETE FROM subtasks WHERE taskId = :taskId")
-    suspend fun deleteSubtasks(taskId: Long)
 
     // Dependencies
     @Query("SELECT * FROM task_dependencies")
@@ -161,9 +149,6 @@ interface ProjectDao {
 
     @Query("SELECT * FROM projects")
     suspend fun getAll(): List<ProjectEntity>
-
-    @Query("SELECT * FROM projects WHERE id = :id")
-    fun observe(id: Long): Flow<ProjectEntity?>
 
     @Upsert
     suspend fun upsert(project: ProjectEntity): Long

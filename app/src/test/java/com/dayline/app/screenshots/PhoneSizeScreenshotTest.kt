@@ -92,8 +92,6 @@ class PhoneSizeScreenshotTest(private val device: Device) {
     @Test fun today() = render("01_today", scrolled = true) { TodayContent(SampleData.todayState(), TodayActions()) }
     @Test fun calendarMonth() = render("02_calendar_month") { CalendarContent(SampleData.calendarState(CalendarView.MONTH), CalendarActions()) }
     @Test fun calendarWeek() = render("03_calendar_week") { CalendarContent(SampleData.calendarState(CalendarView.WEEK), CalendarActions()) }
-    @Test fun calendarDay() = render("04_calendar_day") { CalendarContent(SampleData.calendarState(CalendarView.DAY), CalendarActions()) }
-    @Test fun calendarAgenda() = render("05_calendar_agenda") { CalendarContent(SampleData.calendarState(CalendarView.AGENDA), CalendarActions()) }
     @Test fun calendarYear() = render("06_calendar_year") { CalendarContent(SampleData.calendarState(CalendarView.YEAR), CalendarActions()) }
     @Test fun upcoming() = render("07_upcoming") { TaskListContent(SampleData.upcomingState(), TaskListActions(onBack = {}, onAdd = {})) }
     @Test fun allTasks() = render("08_all_tasks") { TaskListContent(SampleData.allState(), TaskListActions(onBack = {}, onAdd = {})) }
@@ -110,8 +108,7 @@ class PhoneSizeScreenshotTest(private val device: Device) {
             com.dayline.app.ui.quickadd.QuickAddForm(
                 text = "Call Sam about the venue", onText = {}, today = SampleData.today, date = SampleData.today, dateExplicit = true,
                 onDate = { _, _ -> }, onPickDate = {}, priority = com.dayline.app.core.model.Priority.HIGH, onPriority = {},
-                projects = listOf(SampleData.work, SampleData.home), lists = emptyList(), projectId = 1, listId = null,
-                onDestination = { _, _ -> }, onSubmit = {}, onDetails = {},
+                onSubmit = {}, onDetails = {},
             )
         }
     }

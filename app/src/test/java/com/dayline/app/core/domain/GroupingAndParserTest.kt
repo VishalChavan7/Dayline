@@ -54,11 +54,11 @@ class GroupingAndParserTest {
     @Test
     fun parsesQuickAddShortcuts() {
         val p = QuickAddParser.parse("Call mom tomorrow !high #family @Personal", wed)
-        assertEquals("Call mom", p.title)
+        // "@words" are ordinary text now that lists are gone; they stay in the title.
+        assertEquals("Call mom @Personal", p.title)
         assertEquals(wed.plusDays(1), p.date)
         assertEquals(Priority.HIGH, p.priority)
         assertEquals(listOf("family"), p.tags)
-        assertEquals("Personal", p.listName)
     }
 
     @Test

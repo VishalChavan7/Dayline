@@ -1,7 +1,5 @@
 package com.dayline.app.ui.focus
 
-import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -49,8 +47,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -90,7 +86,6 @@ import com.dayline.app.focus.FocusTimerController
 import com.dayline.app.ui.common.LocalFormats
 import com.dayline.app.ui.components.BarChart
 import com.dayline.app.ui.components.DaylineCard
-import com.dayline.app.ui.components.ProgressRing
 import com.dayline.app.ui.components.ResponsiveBox
 import com.dayline.app.ui.components.SectionLabel
 import com.dayline.app.ui.components.StatTile

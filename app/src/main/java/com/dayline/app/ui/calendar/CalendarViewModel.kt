@@ -25,7 +25,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import javax.inject.Inject
 
-enum class CalendarView(val label: String) { MONTH("Month"), WEEK("Week"), DAY("Day"), AGENDA("Agenda"), YEAR("Year") }
+enum class CalendarView(val label: String) { MONTH("Month"), WEEK("Week"), YEAR("Year") }
 
 /** A task placed on a date. Projected entries are future repeats of a recurring task (not yet created). */
 data class CalendarEntry(val item: TaskItem, val date: LocalDate, val isProjection: Boolean = false) {
@@ -85,8 +85,6 @@ class CalendarViewModel @Inject constructor(
         when (view.value) {
             CalendarView.MONTH -> d.plusMonths(direction.toLong()).withDayOfMonth(1).let { if (it.month == time.today().month && it.year == time.today().year) time.today() else it }
             CalendarView.WEEK -> d.plusWeeks(direction.toLong())
-            CalendarView.DAY -> d.plusDays(direction.toLong())
-            CalendarView.AGENDA -> d.plusWeeks(direction.toLong())
             CalendarView.YEAR -> d.plusYears(direction.toLong())
         }
     }
@@ -99,8 +97,6 @@ class CalendarViewModel @Inject constructor(
             // Neighbouring months too, so the month you swipe towards already shows its tasks.
             CalendarView.MONTH -> DateRules.monthGrid(sel.minusMonths(1), ws).first() to DateRules.monthGrid(sel.plusMonths(1), ws).last()
             CalendarView.WEEK -> DateRules.startOfWeek(sel, ws) to DateRules.endOfWeek(sel, ws)
-            CalendarView.DAY -> sel to sel
-            CalendarView.AGENDA -> sel to sel.plusDays(60)
             CalendarView.YEAR -> sel.withDayOfYear(1) to sel.withDayOfYear(sel.lengthOfYear())
         }
 
