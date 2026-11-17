@@ -138,7 +138,7 @@ class PhoneSizeScreenshotTest(private val device: Device) {
     }
     @Test fun notesEmpty() = render("19_empty_notes") { com.dayline.app.ui.notes.NotesContent(com.dayline.app.ui.notes.NotesUiState(loading = false), com.dayline.app.ui.notes.NotesActions()) }
     @Test fun inboxEmpty() = render("19_empty_inbox") { TaskListContent(TaskListUiState(loading = false, mode = TaskListMode.INBOX), TaskListActions(onBack = {}, onAdd = {})) }
-    @Test fun more() = render("20_more") { com.dayline.app.ui.more.MoreContent(com.dayline.app.ui.more.MoreCounts(upcoming = 4, open = 12, completed = 40, inbox = 2)) {} }
+    @Test fun more() = render("20_more") { com.dayline.app.ui.more.MoreContent(com.dayline.app.ui.more.MoreCounts(upcoming = 4, open = 12, completed = 40, inbox = 2), "Version 1.1.0 · up to date") {} }
     @Test fun notes() = render("17_notes") { com.dayline.app.ui.notes.NotesContent(SampleData.notesState(), com.dayline.app.ui.notes.NotesActions()) }
     @Test fun noteEditor() = render("18_note_editor") {
         val body = androidx.compose.runtime.remember {

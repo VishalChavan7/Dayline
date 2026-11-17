@@ -234,6 +234,9 @@ private fun AppScaffold(pendingRoute: String?, onRouteConsumed: () -> Unit) {
     var fabHiddenByScroll by remember { mutableStateOf(false) }
     val backStack by navController.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
+    val updateVm: com.dayline.app.update.UpdateViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    // Opened from the "update ready" notification: show the popup even if it was put off.
+    var forceUpdatePrompt by remember { mutableStateOf(false) }
 
     LaunchedEffect(route) { fabHiddenByScroll = false; menuOpen = false }
     // Refused task actions (e.g. completing a task that's still blocked) explain themselves here.
@@ -248,6 +251,7 @@ private fun AppScaffold(pendingRoute: String?, onRouteConsumed: () -> Unit) {
     LaunchedEffect(pendingRoute) {
         pendingRoute?.let { r ->
             when {
+                r == com.dayline.app.update.UpdateManager.ROUTE -> forceUpdatePrompt = true
                 r.startsWith("task/") -> navigator.to(r)
                 r == ACTION_QUICK_ADD -> quickAdd = QuickAddDefaults()
                 r in topLevelRoutes -> navigator.topLevel(r)
@@ -274,6 +278,7 @@ private fun AppScaffold(pendingRoute: String?, onRouteConsumed: () -> Unit) {
         LocalFabDefaults provides fabDefaults,
         com.dayline.app.ui.components.LocalScrollingDown provides fabHiddenByScroll,
     ) {
+        com.dayline.app.update.UpdatePrompt(updateVm, force = forceUpdatePrompt, onForceHandled = { forceUpdatePrompt = false })
         BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
             val useRail = maxWidth >= 600.dp
             val isTopLevel = route in topLevelRoutes

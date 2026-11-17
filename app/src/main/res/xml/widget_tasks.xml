@@ -6,6 +6,7 @@
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="1800000"
+    android:previewImage="@drawable/widget_preview_tasks"
     android:previewLayout="@layout/preview_tasks"
     android:initialLayout="@layout/preview_tasks"
     android:description="@string/widget_tasks_desc" />

@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
 
 ## Download
 
-Get the latest APK from **[Releases](https://github.com/VishalChavan7/Dayline/releases/latest)**, open it on your phone and allow installing from your browser or file manager when Android asks. Dayline runs on Android 8.0 and newer.
+Get the latest APK from **[Releases](https://github.com/VishalChavan7/Dayline/releases/latest)**, open it on your phone and allow installing from your browser or file manager when Android asks. Dayline runs on Android 8.0 and newer. From version 1.1.0 on, Dayline updates itself from here.
 
 ## Why Dayline
 
@@ -74,52 +74,36 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes
 - Add images, drawings and voice notes. Press and hold **New Note** to start with one.
 
 ### 🧩 Home-screen widgets
-Seven widgets: **Today's tasks, Daily progress, Next up, Habit streaks, Streak flower, Focus timer** and **Quick add**. Each can have its own artistic background in Settings.
+Seven widgets: **Today's tasks, Daily progress, Next up, Habit streaks, Streak flower, Focus timer** and **Quick add**. They resize to fit any home-screen grid (4×5, 5×5, 5×6 and more), and each can have its own artistic background in Settings.
 
 ### 🎨 Design
 - Material 3 Expressive throughout: Google Sans Flex, large rounded surfaces, springy motion and haptics.
 - Themes: dynamic colour (Material You), monochrome, five gradients and a dynamic gradient, in light or dark.
 - Tested on screens from 320 dp small phones and 130% font size to foldables and landscape.
 
+### 🔄 Automatic updates
+- Dayline checks this repository's releases in the background, downloads new versions and lets you know with a notification.
+- Open the app and a popup offers a one-tap update. You can also check any time in **More → Check for updates**.
+
 ### 🔒 Sync and privacy
 - Works fully offline. Everything is stored on your phone.
-- Optional **Google sync** keeps a private copy in your own Google Drive's hidden app folder and keeps your devices in step. Nothing ever goes to a Dayline server, because there isn't one.
+- Optional **Google sync** keeps a private copy in your own Google Drive's hidden app folder and keeps your devices in step. Switch accounts or disconnect any time. Nothing ever goes to a Dayline server, because there isn't one.
 - Export and import a full JSON backup at any time.
 - [Privacy policy](https://vishalchavan7.github.io/privacy.html)
 
 ## Screenshots
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/today.png" width="200"><br><sub>Today</sub></td>
-    <td align="center"><img src="docs/screenshots/add-menu.png" width="200"><br><sub>Quick capture</sub></td>
-    <td align="center"><img src="docs/screenshots/task-editor.png" width="200"><br><sub>Task details</sub></td>
-    <td align="center"><img src="docs/screenshots/upcoming.png" width="200"><br><sub>Upcoming</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/calendar-month.png" width="200"><br><sub>Calendar · month</sub></td>
-    <td align="center"><img src="docs/screenshots/calendar-week.png" width="200"><br><sub>Calendar · week</sub></td>
-    <td align="center"><img src="docs/screenshots/calendar-year.png" width="200"><br><sub>Calendar · year</sub></td>
-    <td align="center"><img src="docs/screenshots/habits.png" width="200"><br><sub>Habits</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/statistics.png" width="200"><br><sub>Statistics</sub></td>
-    <td align="center"><img src="docs/screenshots/notes.png" width="200"><br><sub>Notes</sub></td>
-    <td align="center"><img src="docs/screenshots/onboarding.png" width="200"><br><sub>Onboarding</sub></td>
-    <td align="center"><img src="docs/screenshots/more.png" width="200"><br><sub>More</sub></td>
-  </tr>
-</table>
+**Plan your day**
+<p align="center"><img src="docs/gallery-plan.png" alt="Today, quick capture, task details and upcoming tasks" width="100%"></p>
+
+**Calendar and habits**
+<p align="center"><img src="docs/gallery-calendar.png" alt="Calendar month, week and year views, and habits" width="100%"></p>
+
+**Insights and notes**
+<p align="center"><img src="docs/gallery-more.png" alt="Statistics, notes, onboarding and the More page" width="100%"></p>
 
 **Dark mode**
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/dark-today.png" width="200"><br><sub>Today</sub></td>
-    <td align="center"><img src="docs/screenshots/dark-calendar.png" width="200"><br><sub>Calendar</sub></td>
-    <td align="center"><img src="docs/screenshots/dark-habits.png" width="200"><br><sub>Habits</sub></td>
-    <td align="center"><img src="docs/screenshots/dark-notes.png" width="200"><br><sub>Notes</sub></td>
-  </tr>
-</table>
+<p align="center"><img src="docs/gallery-dark.png" alt="Today, calendar, habits and notes in dark mode" width="100%"></p>
 
 ## Tech stack
 

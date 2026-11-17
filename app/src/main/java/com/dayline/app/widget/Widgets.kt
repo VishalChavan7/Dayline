@@ -408,7 +408,9 @@ private fun HabitsContent(rows: List<WidgetHabit>, best: Int, bestName: String?)
             Text("${rows.count { it.done }}/${rows.size} today", style = style(12.sp, c.onSurface), maxLines = 1)
             Spacer(GlanceModifier.height(6.dp))
             Row(GlanceModifier.fillMaxWidth()) {
-                val shown = rows.take(if (LocalSize.current.width > 180.dp) 6 else 4)
+                // As many check-in circles as fit (30dp each + 5dp gap), so narrow cells never clip.
+                val fit = ((LocalSize.current.width * 0.96f - 24.dp + 5.dp) / 35.dp).toInt().coerceIn(1, 7)
+                val shown = rows.take(fit)
                 if (shown.isEmpty()) Text("No habits due", style = style(11.sp, c.onSurfaceVariant))
                 shown.forEach { h ->
                     Box(
@@ -455,12 +457,20 @@ private fun FocusContent(context: Context, state: FocusTimerState, now: Long) {
     val running = state.status == TimerStatus.RUNNING
     val size = LocalSize.current
     val pad = 12.dp
-    val gap = 8.dp
-    val innerW = size.width - pad * 2
-    val innerH = size.height - pad * 2
-    // 60%: the time. 40%: bento controls.
-    val timerW = (innerW - gap) * 0.6f
-    val controlsW = innerW - gap - timerW
+    // Denser home-screen grids (5×5, 5×6) give smaller cells, and some launchers report a size a
+    // little larger than the space they really give. Lay out for slightly less than reported, and
+    // let the timer flex so the buttons are never pushed off the edge.
+    val innerW = size.width * 0.96f - pad * 2
+    val innerH = size.height * 0.96f - pad * 2
+    val gap = if (innerH < 90.dp) 6.dp else 8.dp
+    // Short widgets put all three buttons in one row; taller ones use the 60/40 bento.
+    val compact = innerH < 96.dp
+    val controlsW = ((innerW - gap) * (if (compact) 0.5f else 0.4f)).coerceIn(64.dp, 168.dp)
+    val timerW = innerW - gap - controlsW
+    val rowH = if (compact) innerH else (innerH - gap) / 2
+    val bigIcon = (rowH * 0.5f).coerceIn(16.dp, 30.dp)
+    val smallIcon = (rowH * 0.42f).coerceIn(14.dp, 22.dp)
+    val radius = (rowH * 0.36f).coerceIn(10.dp, 20.dp)
 
     // Round up like a kitchen timer: a fresh 25-minute session reads 25:00, not 24:59.
     val shownSeconds = (remaining + 999) / 1000
@@ -470,30 +480,37 @@ private fun FocusContent(context: Context, state: FocusTimerState, now: Long) {
     val digits = if (android.os.Build.VERSION.SDK_INT >= 31) {
         timerDigits(context, text, hours, running, remaining, timerW.value, innerH.value)
     } else legacyTimerDigits(context, innerH, hours, running, remaining)
+
+    @Composable
+    fun FocusButton(modifier: GlanceModifier, icon: Int, bg: ColorProvider, tint: ColorProvider, iconSize: androidx.compose.ui.unit.Dp, action: androidx.glance.action.Action) {
+        Box(modifier.cornerRadius(radius).background(bg).clickable(action), contentAlignment = Alignment.Center) { Icon(icon, tint, iconSize) }
+    }
+    val playIcon = if (running) R.drawable.ic_w_pause else R.drawable.ic_w_play
     WidgetCard(GlanceModifier.padding(0.dp)) {
         Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                GlanceModifier.width(timerW).fillMaxHeight().clickable(openRoute("focus")),
+                GlanceModifier.defaultWeight().fillMaxHeight().clickable(openRoute("focus")),
                 contentAlignment = Alignment.Center,
             ) { AndroidRemoteViews(digits) }
             Spacer(GlanceModifier.width(gap))
-            // Bento: play/pause across the full 40% (top half), reset + next side by side below.
-            Column(GlanceModifier.width(controlsW).fillMaxHeight()) {
-                Box(
-                    GlanceModifier.fillMaxWidth().defaultWeight().cornerRadius(20.dp).background(c.primary).clickable(actionRunCallback<FocusToggleAction>()),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(if (running) R.drawable.ic_w_pause else R.drawable.ic_w_play, c.onPrimary, 30.dp) }
-                Spacer(GlanceModifier.height(gap))
-                Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
-                    Box(
-                        GlanceModifier.defaultWeight().fillMaxHeight().cornerRadius(18.dp).background(c.secondaryContainer).clickable(actionRunCallback<FocusResetAction>()),
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(R.drawable.ic_w_reset, c.onSecondaryContainer, 22.dp) }
+            if (compact) {
+                Row(GlanceModifier.width(controlsW).fillMaxHeight()) {
+                    FocusButton(GlanceModifier.defaultWeight().fillMaxHeight(), playIcon, c.primary, c.onPrimary, bigIcon, actionRunCallback<FocusToggleAction>())
                     Spacer(GlanceModifier.width(gap))
-                    Box(
-                        GlanceModifier.defaultWeight().fillMaxHeight().cornerRadius(18.dp).background(c.secondaryContainer).clickable(actionRunCallback<FocusSkipAction>()),
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(R.drawable.ic_w_skip, c.onSecondaryContainer, 22.dp) }
+                    FocusButton(GlanceModifier.defaultWeight().fillMaxHeight(), R.drawable.ic_w_reset, c.secondaryContainer, c.onSecondaryContainer, smallIcon, actionRunCallback<FocusResetAction>())
+                    Spacer(GlanceModifier.width(gap))
+                    FocusButton(GlanceModifier.defaultWeight().fillMaxHeight(), R.drawable.ic_w_skip, c.secondaryContainer, c.onSecondaryContainer, smallIcon, actionRunCallback<FocusSkipAction>())
+                }
+            } else {
+                // Bento: play/pause across the top half, reset + next side by side below.
+                Column(GlanceModifier.width(controlsW).fillMaxHeight()) {
+                    FocusButton(GlanceModifier.fillMaxWidth().defaultWeight(), playIcon, c.primary, c.onPrimary, bigIcon, actionRunCallback<FocusToggleAction>())
+                    Spacer(GlanceModifier.height(gap))
+                    Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
+                        FocusButton(GlanceModifier.defaultWeight().fillMaxHeight(), R.drawable.ic_w_reset, c.secondaryContainer, c.onSecondaryContainer, smallIcon, actionRunCallback<FocusResetAction>())
+                        Spacer(GlanceModifier.width(gap))
+                        FocusButton(GlanceModifier.defaultWeight().fillMaxHeight(), R.drawable.ic_w_skip, c.secondaryContainer, c.onSecondaryContainer, smallIcon, actionRunCallback<FocusSkipAction>())
+                    }
                 }
             }
         }

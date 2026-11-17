@@ -22,7 +22,7 @@ glance = "1.1.1"
 splashscreen = "1.0.1"
 profileinstaller = "1.4.1"
 richEditor = "1.0.0-rc13"
-playServicesAuth = "21.2.0"
+playServicesAuth = "21.6.0"
 
 # Testing
 junit = "4.13.2"

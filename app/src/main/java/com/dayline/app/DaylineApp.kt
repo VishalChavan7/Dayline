@@ -66,6 +66,10 @@ class DaylineApp : Application(), Configuration.Provider {
                     }
                 }
         }
+        // New versions from GitHub Releases: checked twice a day, downloaded in the background.
+        if (!BuildConfig.DEBUG) com.dayline.app.update.UpdateScheduler.schedulePeriodic(this)
+        // Widget-picker previews for Android 15+ (once per app version).
+        appScope.launch { runCatching { com.dayline.app.widget.WidgetPreviews.publish(this@DaylineApp) } }
         // Keep home-screen widgets in step with the data (debounced so bursts of edits update once).
         appScope.launch {
             combine(tasks.items, habits.completions, habits.habits, focusTimer.state, clock.today) { _, _, _, _, _ -> Unit }

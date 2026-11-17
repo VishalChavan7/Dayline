@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Timer
@@ -70,12 +71,25 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class MoreCounts(val upcoming: Int = 0, val open: Int = 0, val completed: Int = 0, val inbox: Int = 0)
 
 @HiltViewModel
-class MoreViewModel @Inject constructor(tasks: TaskRepository, clock: AppClock) : ViewModel() {
+class MoreViewModel @Inject constructor(tasks: TaskRepository, clock: AppClock, private val updates: com.dayline.app.update.UpdateManager) : ViewModel() {
+    val update: StateFlow<com.dayline.app.update.UpdateState> = updates.state
+    val currentVersion: String get() = updates.currentVersion
+
+    /** "Check for updates": install a ready update, otherwise look for one now. */
+    fun onUpdateTile() {
+        when (val s = updates.state.value) {
+            is com.dayline.app.update.UpdateState.Ready -> updates.install(s.apk)
+            is com.dayline.app.update.UpdateState.Checking, is com.dayline.app.update.UpdateState.Downloading -> Unit
+            else -> viewModelScope.launch { updates.checkAndDownload(notify = false) }
+        }
+    }
+
     val counts: StateFlow<MoreCounts> = combine(tasks.items, clock.today) { items, today ->
         MoreCounts(
             upcoming = items.count { !it.task.isCompleted && it.task.scheduledDate?.isAfter(today) == true },
@@ -91,12 +105,18 @@ private data class MoreEntry(val label: String, val caption: String?, val icon: 
 @Composable
 fun MoreScreen(nav: AppNavigator, vm: MoreViewModel = hiltViewModel()) {
     val counts by vm.counts.collectAsStateWithLifecycle()
-    MoreContent(counts) { nav.to(it) }
+    val update by vm.update.collectAsStateWithLifecycle()
+    MoreContent(counts, com.dayline.app.update.updateCaption(update, vm.currentVersion)) {
+        if (it == CHECK_UPDATES) vm.onUpdateTile() else nav.to(it)
+    }
 }
+
+/** Pseudo-route for the "Check for updates" tile (handled in place, not navigated to). */
+const val CHECK_UPDATES = "check_updates"
 
 /** The More page (stateless, also used by the screenshot tests). */
 @Composable
-fun MoreContent(counts: MoreCounts, onOpen: (String) -> Unit) {
+fun MoreContent(counts: MoreCounts, updateCaption: String? = null, onOpen: (String) -> Unit) {
     val groups = listOf(
         "Tasks" to listOf(
             MoreEntry("Inbox", "${counts.inbox} to sort", Icons.Rounded.Inbox, Routes.INBOX) { MaterialTheme.colorScheme.primary },
@@ -110,6 +130,7 @@ fun MoreContent(counts: MoreCounts, onOpen: (String) -> Unit) {
         ),
         "App" to listOf(
             MoreEntry("Settings", null, Icons.Rounded.Settings, Routes.SETTINGS) { MaterialTheme.colorScheme.onSurfaceVariant },
+            MoreEntry("Check for updates", updateCaption, Icons.Rounded.SystemUpdate, CHECK_UPDATES) { MaterialTheme.colorScheme.onSurfaceVariant },
         ),
     )
     val bar = rememberBarScroll()

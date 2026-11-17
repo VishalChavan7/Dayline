@@ -88,6 +88,21 @@ class GoogleSync @Inject constructor(
     /** Starts sign-in from the Settings screen. Returns a result that may need the account picker. */
     fun authorize(activity: Activity): Task<AuthorizationResult> = Identity.getAuthorizationClient(activity).authorize(authorizationRequest)
 
+    /** Sign-in for a specific account the user picked (used to switch accounts). */
+    fun authorize(activity: Activity, account: android.accounts.Account): Task<AuthorizationResult> =
+        Identity.getAuthorizationClient(activity).authorize(
+            AuthorizationRequest.builder()
+                .setRequestedScopes(listOf(Scope(DRIVE_APPDATA), Scope("email")))
+                .setAccount(account)
+                .build(),
+        )
+
+    /** The system "Choose an account" screen, limited to Google accounts. */
+    fun chooseAccountIntent(current: String?): Intent = android.accounts.AccountManager.newChooseAccountIntent(
+        current?.takeIf { it.contains('@') }?.let { android.accounts.Account(it, GOOGLE_ACCOUNT_TYPE) },
+        null, arrayOf(GOOGLE_ACCOUNT_TYPE), "Choose the Google account to sync Dayline with", null, null, null,
+    )
+
     fun resultFromIntent(data: Intent?): AuthorizationResult = Identity.getAuthorizationClient(context).getAuthorizationResultFromIntent(data)
 
     /** Called once the user has granted access in the picker. */
@@ -98,10 +113,31 @@ class GoogleSync @Inject constructor(
         return syncNow(token)
     }
 
+    /**
+     * Stops syncing and gives Dayline's Drive access back to Google, so the next "Connect" can pick
+     * any account. The copy already in Drive is left where it is.
+     */
     suspend fun disconnect() {
+        val account = settings.sync.first().account
+        SyncScheduler.cancel(context)
         settings.setSyncEnabled(false)
         _status.value = SyncStatus.Idle
-        SyncScheduler.cancel(context)
+        if (account.contains('@')) {
+            runCatching {
+                Identity.getAuthorizationClient(context).revokeAccess(
+                    com.google.android.gms.auth.api.identity.RevokeAccessRequest.builder()
+                        .setAccount(android.accounts.Account(account, GOOGLE_ACCOUNT_TYPE))
+                        .setScopes(listOf(Scope(DRIVE_APPDATA), Scope("email")))
+                        .build(),
+                ).await()
+            }
+        }
+    }
+
+    /** Switches to another account: forget the old one's sync state, then connect the new one. */
+    suspend fun switchTo(result: AuthorizationResult): SyncOutcome {
+        disconnect()
+        return connect(result)
     }
 
     /** Silent token for background syncs; null when the user must sign in again. */
@@ -151,6 +187,13 @@ class GoogleSync @Inject constructor(
             settings.recordSync(localHash, created.version, now)
             return SyncOutcome.UPLOADED
         }
+        if (prefs.remoteVersion.isBlank() && isEmptyBackup(local)) {
+            // First sync with this account on a device with nothing in it yet: just take the cloud copy.
+            val content = drive.download(remote.id)
+            backup.importJson(content)
+            settings.recordSync(fingerprint(backup.exportJson()), remote.version, now)
+            return SyncOutcome.DOWNLOADED
+        }
         val localChanged = localHash != prefs.localHash
         val remoteChanged = remote.version != prefs.remoteVersion
         return when {
@@ -182,6 +225,12 @@ class GoogleSync @Inject constructor(
         }
     }
 
+    /** True when a backup holds no tasks, habits, notes or focus history. */
+    private fun isEmptyBackup(json: String): Boolean = runCatching {
+        val root = org.json.JSONObject(json)
+        listOf("tasks", "habits", "notes", "focusSessions").all { (root.optJSONArray(it)?.length() ?: 0) == 0 }
+    }.getOrDefault(false)
+
     /** The cloud copy set aside during the last conflict, if any. */
     fun conflictCopy(): File? = conflictFile().takeIf { it.exists() && it.length() > 0 }
 
@@ -208,7 +257,7 @@ class GoogleSync @Inject constructor(
 
     private fun explain(e: ApiException): String = when (e.statusCode) {
         CommonStatusCodes.DEVELOPER_ERROR ->
-            "Google sign-in isn't set up for this build yet. Add an Android OAuth client for com.dayline.app (see README › Google sync)."
+            "Google sign-in isn't available in this version of Dayline. Please update the app."
         CommonStatusCodes.NETWORK_ERROR -> "No connection — will try again later."
         CommonStatusCodes.SIGN_IN_REQUIRED -> "Sign in again to keep syncing."
         else -> "Google sign-in failed (${e.statusCode})."
@@ -275,7 +324,7 @@ class GoogleSync @Inject constructor(
                     throw SyncException(
                         when (code) {
                             401 -> "Google sign-in expired — reconnect in Settings."
-                            403 -> if (err.contains("accessNotConfigured") || err.contains("has not been used")) "Enable the Google Drive API for your OAuth project (see README)." else "Google Drive refused access ($code)."
+                            403 -> if (err.contains("accessNotConfigured") || err.contains("has not been used")) "Google Drive sync is temporarily unavailable. Please try again later." else "Google Drive refused access ($code)."
                             else -> "Google Drive error $code."
                         },
                     )
@@ -287,6 +336,7 @@ class GoogleSync @Inject constructor(
 
     companion object {
         const val DRIVE_APPDATA = "https://www.googleapis.com/auth/drive.appdata"
+        const val GOOGLE_ACCOUNT_TYPE = "com.google"
         private const val FILE_NAME = "dayline-sync.json"
     }
 }

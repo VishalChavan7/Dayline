@@ -44,6 +44,7 @@ class SettingsViewModel @Inject constructor(
     fun connectSync(result: com.google.android.gms.auth.api.identity.AuthorizationResult) = viewModelScope.launch { googleSync.connect(result) }
     fun syncNow() = viewModelScope.launch { googleSync.syncNow() }
     fun disconnectSync() = viewModelScope.launch { googleSync.disconnect() }
+    fun switchSync(result: com.google.android.gms.auth.api.identity.AuthorizationResult) = viewModelScope.launch { googleSync.switchTo(result) }
     fun restoreConflict() = viewModelScope.launch { googleSync.restoreConflictCopy() }
     fun syncError(message: String) = viewModelScope.launch { repo.recordSyncError(message) }
     val settings: StateFlow<AppSettings?> = repo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, null)

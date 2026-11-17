@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.SwitchAccount
+import androidx.compose.material.icons.automirrored.rounded.Logout
 
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -474,30 +476,60 @@ private fun GoogleSyncGroup(vm: SettingsViewModel) {
     val prefs by vm.syncPrefs.collectAsStateWithLifecycle()
     val status by vm.syncStatus.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        if (r.resultCode == android.app.Activity.RESULT_OK) {
-            runCatching { vm.googleSync.resultFromIntent(r.data) }.onSuccess { vm.connectSync(it) }.onFailure { vm.syncError("Google sign-in was cancelled.") }
-        }
-    }
-    fun connect() {
+    // True while the sign-in flow was started by "Switch account" (the old account is let go first).
+    var switching by remember { mutableStateOf(false) }
+    var confirmDisconnect by remember { mutableStateOf(false) }
+    fun activity(): android.app.Activity? {
         var ctx = context
         while (ctx is android.content.ContextWrapper && ctx !is android.app.Activity) ctx = ctx.baseContext
-        val activity = ctx as? android.app.Activity ?: return
-        vm.googleSync.authorize(activity)
-            .addOnSuccessListener { result ->
-                val pending = result.pendingIntent
-                if (result.hasResolution() && pending != null) {
-                    launcher.launch(androidx.activity.result.IntentSenderRequest.Builder(pending.intentSender).build())
-                } else vm.connectSync(result)
-            }
-            .addOnFailureListener { e ->
-                val code = (e as? com.google.android.gms.common.api.ApiException)?.statusCode
-                vm.syncError(
-                    if (code == com.google.android.gms.common.api.CommonStatusCodes.DEVELOPER_ERROR)
-                        "Google sign-in isn't set up for this build yet. Add an Android OAuth client for com.dayline.app (see README › Google sync)."
-                    else "Couldn't reach Google: ${e.message ?: "unknown error"}",
-                )
-            }
+        return ctx as? android.app.Activity
+    }
+    fun accept(result: com.google.android.gms.auth.api.identity.AuthorizationResult) {
+        if (switching) vm.switchSync(result) else vm.connectSync(result)
+        switching = false
+    }
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) { r ->
+        if (r.resultCode == android.app.Activity.RESULT_OK) {
+            runCatching { vm.googleSync.resultFromIntent(r.data) }.onSuccess { accept(it) }.onFailure { switching = false; vm.syncError("Google sign-in was cancelled.") }
+        } else switching = false
+    }
+    fun handle(task: com.google.android.gms.tasks.Task<com.google.android.gms.auth.api.identity.AuthorizationResult>) {
+        task.addOnSuccessListener { result ->
+            val pending = result.pendingIntent
+            if (result.hasResolution() && pending != null) {
+                launcher.launch(androidx.activity.result.IntentSenderRequest.Builder(pending.intentSender).build())
+            } else accept(result)
+        }.addOnFailureListener { e ->
+            switching = false
+            val code = (e as? com.google.android.gms.common.api.ApiException)?.statusCode
+            vm.syncError(
+                if (code == com.google.android.gms.common.api.CommonStatusCodes.DEVELOPER_ERROR)
+                    "Google sign-in isn't available in this version of Dayline. Please update the app."
+                else "Couldn't reach Google. Check your connection and try again.",
+            )
+        }
+    }
+    fun connect() { activity()?.let { handle(vm.googleSync.authorize(it)) } }
+    // "Switch account": the system account chooser, then sign-in for exactly that account.
+    val chooser = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        val name = r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME)
+        val type = r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_TYPE) ?: com.dayline.app.sync.GoogleSync.GOOGLE_ACCOUNT_TYPE
+        val act = activity()
+        if (r.resultCode == android.app.Activity.RESULT_OK && name != null && act != null && !name.equals(prefs.account, ignoreCase = true)) {
+            switching = true
+            handle(vm.googleSync.authorize(act, android.accounts.Account(name, type)))
+        }
+    }
+    fun switchAccount() { runCatching { chooser.launch(vm.googleSync.chooseAccountIntent(prefs.account)) } }
+    if (confirmDisconnect) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDisconnect = false },
+            icon = { Icon(Icons.Rounded.CloudOff, null) },
+            title = { Text("Disconnect Google account?") },
+            text = { Text("Dayline stops syncing and gives back its access to ${prefs.account.ifBlank { "this account" }}. Everything stays on this phone, and the copy in Google Drive is kept.") },
+            confirmButton = { TextButton(onClick = { confirmDisconnect = false; vm.disconnectSync() }) { Text("Disconnect") } },
+            dismissButton = { TextButton(onClick = { confirmDisconnect = false }) { Text("Cancel") } },
+        )
     }
     SettingsGroup("Google sync") {
         Row(Modifier.fillMaxWidth().padding(vertical = Dimens.sm), verticalAlignment = Alignment.CenterVertically) {
@@ -525,10 +557,25 @@ private fun GoogleSyncGroup(vm: SettingsViewModel) {
             if (status is com.dayline.app.sync.SyncStatus.Syncing) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         }
         if (prefs.enabled) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.sm), modifier = Modifier.padding(bottom = Dimens.sm)) {
-                androidx.compose.material3.FilledTonalButton(onClick = vm::syncNow, enabled = status !is com.dayline.app.sync.SyncStatus.Syncing) { Text("Sync now") }
-                androidx.compose.material3.OutlinedButton(onClick = { if (prefs.error.isNotBlank()) connect() else vm.disconnectSync() }) {
-                    Text(if (prefs.error.isNotBlank()) "Reconnect" else "Disconnect")
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Dimens.sm),
+                verticalArrangement = Arrangement.spacedBy(Dimens.xs),
+                modifier = Modifier.padding(bottom = Dimens.sm),
+            ) {
+                if (prefs.error.isNotBlank()) {
+                    androidx.compose.material3.FilledTonalButton(onClick = ::connect) { Text("Reconnect") }
+                } else {
+                    androidx.compose.material3.FilledTonalButton(onClick = vm::syncNow, enabled = status !is com.dayline.app.sync.SyncStatus.Syncing) { Text("Sync now") }
+                }
+                androidx.compose.material3.OutlinedButton(onClick = ::switchAccount, enabled = status !is com.dayline.app.sync.SyncStatus.Syncing) {
+                    Icon(Icons.Rounded.SwitchAccount, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(Dimens.sm))
+                    Text("Switch account")
+                }
+                TextButton(onClick = { confirmDisconnect = true }) {
+                    Icon(Icons.AutoMirrored.Rounded.Logout, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(Dimens.sm))
+                    Text("Disconnect")
                 }
             }
             if (vm.googleSync.conflictCopy() != null) {
