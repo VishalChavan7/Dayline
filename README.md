@@ -24,7 +24,7 @@
 
 Add a task on your Mac, tick a habit on your phone, write in your journal: everything shows up on the other device within seconds.
 
-https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
+https://github.com/user-attachments/assets/f4f4b528-0639-4365-9d24-b5ecd0c67ecd
 
 ## Download
 
