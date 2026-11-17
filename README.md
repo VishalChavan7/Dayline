@@ -28,8 +28,8 @@ https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
 
 | | Get it | Needs |
 |---|---|---|
-| 📱 **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
-| 💻 **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.0.0): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
+| **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
+| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.0.0): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
 
 Both apps update themselves after you install them.
 
