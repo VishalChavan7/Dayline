@@ -57,8 +57,10 @@ final class FocusTimer: ObservableObject {
     }
 
     private func tick() {
-        now = Date().epochMillis
-        if FocusTimerMachine.isDue(state, now: now) { finish() }
+        let t = Date().epochMillis
+        // Publish only when the shown second changes, so views redraw once a second, not four times.
+        if t / 1000 != now / 1000 { now = t }
+        if FocusTimerMachine.isDue(state, now: t) { finish() }
     }
 
     /// After sleep or relaunch, finish a phase that ended meanwhile.

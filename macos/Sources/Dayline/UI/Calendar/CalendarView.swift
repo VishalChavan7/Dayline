@@ -11,30 +11,24 @@ struct CalendarView: View {
     @State private var selected = Day.today()
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 14) {
             VStack(spacing: 0) {
                 header
-                Divider()
                 switch mode {
                 case .month: MonthGrid(anchor: anchor, selected: $selected, entries: entries(for:))
                 case .week: WeekTimeGrid(anchor: anchor, selected: $selected, entries: entries(for:))
                 case .year: YearGrid(year: anchor.year, selected: $selected) { d in selected = d; anchor = d; mode = .month }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
-            .glass(Radius.panel)
-            .padding(16)
-            .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            .surface()
+            .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
             DayPanel(day: selected, entries: entries(for: selected))
-                .glass(Radius.panel)
-                .padding([.vertical, .trailing], 16)
-                .frame(minWidth: 280, idealWidth: 320, maxWidth: 400, maxHeight: .infinity)
+                .surface()
+                .frame(minWidth: 280, idealWidth: 320, maxWidth: 360, maxHeight: .infinity)
         }
+        .padding(16)
         .navigationTitle("Calendar")
-        .toolbar {
-            Picker("View", selection: $mode) { ForEach(CalendarMode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
-                .pickerStyle(.segmented).fixedSize()
-        }
     }
 
     var title: String {
@@ -48,15 +42,26 @@ struct CalendarView: View {
     }
 
     var header: some View {
-        HStack {
-            Text(title).font(.system(size: 22, weight: .bold, design: .rounded))
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 22, weight: .bold))
+                Text(todaySummary).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary)
+            }
             Spacer()
-            Button { move(-1) } label: { Image(systemName: "chevron.left") }.help("Previous")
-            Button("Today") { anchor = store.today; selected = store.today }
-            Button { move(1) } label: { Image(systemName: "chevron.right") }.help("Next")
+            Segmented(options: CalendarMode.allCases, selection: $mode) { $0.rawValue }
+            HStack(spacing: 2) {
+                IconButton(symbol: "chevron.left", help: "Previous") { move(-1) }
+                Button("Today") { anchor = store.today; selected = store.today }.buttonStyle(.tonal)
+                IconButton(symbol: "chevron.right", help: "Next") { move(1) }
+            }
         }
-        .glassButton()
-        .padding(.horizontal, 18).padding(.vertical, 12)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+    }
+
+    var todaySummary: String {
+        let n = TaskGrouping.onDay(store.data.tasks, store.today).count
+        let m = store.focusMinutes(on: store.today)
+        return "Today · \(n) task\(n == 1 ? "" : "s")" + (m > 0 ? " · \(Formats.minutes(m)) focused" : "")
     }
 
     func move(_ n: Int) {
@@ -102,7 +107,7 @@ struct EntryChip: View {
         .padding(.vertical, 2).padding(.horizontal, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: 4).fill((store.project(t.projectId).map { Color(argb: $0.color) } ?? t.priority.color).opacity(0.12)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(t.priority.color.opacity(0.13)))
         .opacity(entry.projected || t.isCompleted ? 0.5 : 1)
     }
 }
@@ -141,7 +146,8 @@ struct MonthGrid: View {
 
     func cell(_ d: Day, inMonth: Bool, height: CGFloat) -> some View {
         let list = entries(d)
-        let maxChips = max(0, Int((height - 26) / 18))
+        let fits = max(0, Int((height - 28) / 17))
+        let maxChips = list.count > fits ? max(0, fits - 1) : fits
         let isToday = d == store.today
         return VStack(alignment: .leading, spacing: 2) {
             HStack {
@@ -155,9 +161,9 @@ struct MonthGrid: View {
             ForEach(list.prefix(maxChips)) { e in
                 EntryChip(entry: e)
                     .draggable(TaskDragItem(id: e.task.id))
-                    .onTapGesture(count: 2) { nav.open(e.task.id) }
+                    .onTapGesture { selected = d; nav.open(e.task.id) }
             }
-            if list.count > maxChips && maxChips >= 0 {
+            if list.count > maxChips {
                 Text("+\(list.count - maxChips) more").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -172,53 +178,6 @@ struct MonthGrid: View {
             items.forEach { store.reschedule($0.id, to: d) }
             return true
         } isTargeted: { dropTarget = $0 ? d : (dropTarget == d ? nil : dropTarget) }
-    }
-}
-
-struct WeekColumns: View {
-    @EnvironmentObject var store: Store
-    @EnvironmentObject var nav: Navigator
-    let anchor: Day
-    @Binding var selected: Day
-    let entries: (Day) -> [CalendarEntry]
-    @State private var dropTarget: Day?
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(DateRules.weekDays(anchor, store.weekStart), id: \.self) { d in
-                let isToday = d == store.today
-                VStack(alignment: .leading, spacing: 6) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(d.weekday.short).font(.caption.weight(.semibold)).foregroundStyle(isToday ? Color.accentColor : .secondary)
-                        Text("\(d.dayOfMonth)").font(.title2.weight(isToday ? .bold : .regular)).foregroundStyle(isToday ? Color.accentColor : .primary)
-                    }
-                    ScrollView {
-                        VStack(spacing: 4) {
-                            ForEach(entries(d)) { e in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    EntryChip(entry: e)
-                                    if let time = e.task.dueTime ?? e.task.startTime {
-                                        Text(Formats(store: store).time(time)).font(.caption2).foregroundStyle(.secondary).padding(.leading, 8)
-                                    }
-                                }
-                                .draggable(TaskDragItem(id: e.task.id))
-                                .onTapGesture(count: 2) { nav.open(e.task.id) }
-                            }
-                        }
-                    }
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(selected == d ? Color.accentColor.opacity(0.08) : dropTarget == d ? Color.accentColor.opacity(0.18) : .clear)
-                .overlay(alignment: .trailing) { Rectangle().fill(Color.primary.opacity(0.06)).frame(width: 0.5) }
-                .contentShape(Rectangle())
-                .onTapGesture { selected = d }
-                .dropDestination(for: TaskDragItem.self) { items, _ in
-                    items.forEach { store.reschedule($0.id, to: d) }
-                    return true
-                } isTargeted: { dropTarget = $0 ? d : (dropTarget == d ? nil : dropTarget) }
-            }
-        }
     }
 }
 
@@ -270,33 +229,44 @@ struct DayPanel: View {
     let entries: [CalendarEntry]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(day.date().formatted(.dateTime.weekday(.wide).month(.wide).day())).font(.title3.weight(.semibold))
+        let f = Formats(store: store)
+        let n = entries.filter { !$0.projected }.count
+        let focus = store.focusMinutes(on: day)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(f.date(day)).font(.system(size: 20, weight: .bold))
+                Text(day.date().formatted(.dateTime.weekday(.wide).month(.wide).day()) + " · \(n) task\(n == 1 ? "" : "s")" + (focus > 0 ? " · \(Formats.minutes(focus)) focused" : ""))
+                    .font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary)
+            }
             QuickAddField(date: day, placeholder: "Add a task on this day")
             if entries.isEmpty {
-                Text("Nothing on this day.").foregroundStyle(.secondary).padding(.top, 8)
-            }
-            List(selection: $nav.selectedTask) {
-                ForEach(entries) { e in
-                    if e.projected {
-                        HStack { Image(systemName: "repeat").foregroundStyle(.secondary); Text(e.task.title).foregroundStyle(.secondary) }
-                            .help("A future repeat of this task")
-                    } else {
-                        TaskRow(task: e.task, showDate: false).tag(e.task.id)
+                Text("Nothing on this day.").foregroundStyle(.secondary).padding(.top, 4)
+                Spacer()
+            } else {
+                List(selection: $nav.selectedTask) {
+                    ForEach(entries) { e in
+                        Group {
+                            if e.projected {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "repeat").foregroundStyle(.secondary).frame(width: 20)
+                                    Text(e.task.title).foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 5)
+                                .help("A future repeat of this task")
+                            } else {
+                                TaskRow(task: e.task, showDate: false).tag(e.task.id)
+                            }
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
                     }
                 }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .contextMenu(forSelectionType: Int64.self) { _ in } primaryAction: { ids in if let id = ids.first { nav.open(id) } }
-            let habits = store.activeHabits.filter { HabitStreaks.isScheduled($0, day) }
-            if !habits.isEmpty && !(day > store.today) {
-                Divider()
-                Text("Habits").font(.headline)
-                FlowRow(spacing: 6) { ForEach(habits) { HabitChip(habit: $0, day: day) } }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .contextMenu(forSelectionType: Int64.self) { _ in } primaryAction: { ids in if let id = ids.first { nav.open(id) } }
             }
         }
-        .padding(14)
+        .padding(16)
     }
 }
 
@@ -338,7 +308,7 @@ struct WeekTimeGrid: View {
                 ForEach(days, id: \.self) { d in
                     VStack(spacing: 3) {
                         ForEach(entries(d).filter { ($0.task.dueTime ?? $0.task.startTime) == nil }.prefix(4)) { e in
-                            EntryChip(entry: e).draggable(TaskDragItem(id: e.task.id)).onTapGesture(count: 2) { nav.open(e.task.id) }
+                            EntryChip(entry: e).draggable(TaskDragItem(id: e.task.id)).onTapGesture { nav.open(e.task.id) }
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 28, alignment: .top)
@@ -370,6 +340,7 @@ struct WeekTimeGrid: View {
                             ForEach(days, id: \.self) { d in dayColumn(d) }
                         }
                     }
+                    .padding(.top, 10)
                 }
                 .onAppear { proxy.scrollTo(7, anchor: .top) }
             }
@@ -377,10 +348,8 @@ struct WeekTimeGrid: View {
     }
 
     func hourLabel(_ h: Int) -> String {
-        let f = DateFormatter()
         let twentyFour = store.timeFormat == "H24" || (store.timeFormat == "SYSTEM" && !(DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current) ?? "").contains("a"))
-        f.dateFormat = twentyFour ? "HH:mm" : "h a"
-        return f.string(from: Day.today().date(at: TimeOfDay(hour: h, minute: 0)))
+        return Formats.formatter(twentyFour ? "HH:mm" : "h a").string(from: Day.today().date(at: TimeOfDay(hour: h, minute: 0)))
     }
 
     func dayColumn(_ d: Day) -> some View {
@@ -423,7 +392,7 @@ struct WeekTimeGrid: View {
 
     func block(_ e: CalendarEntry, minutes: Int) -> some View {
         let t = e.task
-        let color = store.project(t.projectId).map { Color(argb: $0.color) } ?? t.priority.color
+        let color = t.priority.color
         return VStack(alignment: .leading, spacing: 1) {
             Text(t.title).font(.system(size: 11.5, weight: .semibold)).lineLimit(minutes >= 60 ? 2 : 1).strikethrough(t.isCompleted)
             if minutes >= 45, let time = t.dueTime ?? t.startTime { Text(Formats(store: store).time(time)).font(.system(size: 10)).opacity(0.8) }
@@ -435,8 +404,7 @@ struct WeekTimeGrid: View {
         .padding(.horizontal, 2)
         .opacity(e.projected || t.isCompleted ? 0.6 : 1)
         .draggable(TaskDragItem(id: t.id))
-        .onTapGesture(count: 2) { nav.open(t.id) }
-        .onTapGesture { nav.selectedTask = t.id }
+        .onTapGesture { nav.open(t.id) }
         .help(t.title)
     }
 }

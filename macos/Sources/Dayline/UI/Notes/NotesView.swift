@@ -13,7 +13,7 @@ final class NotesUI: ObservableObject {
     func newNote() { selected = 0; token = UUID() }
 }
 
-/// Notes in two panes, inspired by writing apps like Bear: a list with search and labels, and a calm editor.
+/// Notes in two panes: the phone's note cards (search, labels, pinned first) and an editor beside them.
 struct NotesView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var ui: NotesUI
@@ -23,18 +23,16 @@ struct NotesView: View {
     var body: some View {
         HStack(spacing: 0) {
             listPane
-                .frame(width: 310)
-                .glass(Radius.panel)
-                .padding([.vertical, .leading], 16)
+                .frame(width: 330)
+            Divider()
             Group {
                 if let id = ui.selected {
                     NotePane(noteId: id, presetLabel: label).id(ui.token)
                 } else {
-                    IllustratedEmpty(title: store.data.notes.isEmpty ? "Your notebook is empty" : "Pick a note", message: "Write with headings, lists and checklists. Add #labels to keep things tidy — they sync with your phone.") {
-                        NotebookArt(color: Destination.notes.tint)
-                    }
-                    .overlay(alignment: .bottom) {
-                        Button { ui.newNote() } label: { Label("New Note", systemImage: "square.and.pencil") }.glassButton(prominent: true).controlSize(.large).padding(.bottom, 70)
+                    VStack(spacing: 0) {
+                        EmptyState(symbol: "note.text", title: store.data.notes.isEmpty ? "Your notebook is empty" : "Pick a note",
+                                   message: "Write with headings, lists and checklists. Add #labels to keep things tidy — they sync with your phone.")
+                        Button { ui.newNote() } label: { Label("New Note", systemImage: "square.and.pencil") }.buttonStyle(.filled).padding(.bottom, 80)
                     }
                 }
             }
@@ -46,97 +44,103 @@ struct NotesView: View {
     var notes: [Note] {
         let q = query.trimmingCharacters(in: .whitespaces)
         return store.data.notes
-            .filter { label == nil || (label == "__pinned" ? $0.isPinned : store.labels(of: $0).contains(label!)) }
+            .filter { label == nil || store.labels(of: $0).contains(label!) }
             .filter { q.isEmpty || $0.title.localizedCaseInsensitiveContains(q) || NoteCodec.plainText($0.body).localizedCaseInsensitiveContains(q) }
-            .sorted { a, b in a.isPinned != b.isPinned ? a.isPinned : a.updatedAt > b.updatedAt }
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     var listPane: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Notes").font(.system(size: 22, weight: .bold, design: .rounded))
-                Text("\(store.data.notes.count)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                Spacer()
-                GlassIconButton(symbol: "square.and.pencil", help: "New note (⌥⌘N)", size: 30) { ui.newNote() }
-            }
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search notes", text: $query).textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(Color.primary.opacity(0.06)))
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    chip("All", nil)
-                    if store.data.notes.contains(where: \.isPinned) { chip("Pinned", "__pinned") }
-                    ForEach(store.allNoteLabels, id: \.self) { l in chip("#" + l, l) }
+        let shown = notes
+        let pinned = shown.filter(\.isPinned), others = shown.filter { !$0.isPinned }
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .bottom) {
+                    ScreenTitle(title: "Notes", subtitle: "\(store.data.notes.count) note\(store.data.notes.count == 1 ? "" : "s")")
+                    Spacer()
+                    IconButton(symbol: "square.and.pencil", help: "New note (⌥⌘N)", size: 30) { ui.newNote() }
                 }
-            }
-            ScrollView {
-                LazyVStack(spacing: 4) {
-                    ForEach(notes) { n in
-                        NoteRow(note: n, selected: ui.selected == n.id)
-                            .onTapGesture { ui.open(n.id) }
-                            .contextMenu {
-                                Button(n.isPinned ? "Unpin" : "Pin") { store.setPinned(note: n.id, !n.isPinned) }
-                                Menu("Colour") {
-                                    Button("Default") { var m = n; m.color = 0; store.save(m) }
-                                    ForEach(NoteColors.all) { sw in Button(sw.name) { var m = n; m.color = sw.key; store.save(m) } }
-                                }
-                                Divider()
-                                Button("Delete", role: .destructive) { if ui.selected == n.id { ui.selected = nil }; store.deleteNote(n.id) }
-                            }
+                .padding(.bottom, 4)
+                SearchField(prompt: "Search your notes", text: $query)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Chip(text: "All", on: label == nil) { label = nil }
+                        ForEach(store.allNoteLabels, id: \.self) { l in Chip(text: l, symbol: "tag", on: label == l) { label = l } }
                     }
-                    if notes.isEmpty { Text(store.data.notes.isEmpty ? "No notes yet." : "No matching notes.").foregroundStyle(.secondary).padding(.top, 20) }
                 }
+                .padding(.bottom, 4)
+                if !pinned.isEmpty {
+                    group("PINNED")
+                    ForEach(pinned) { n in row(n) }
+                }
+                if !others.isEmpty {
+                    if !pinned.isEmpty { group("OTHERS") }
+                    ForEach(others) { n in row(n) }
+                }
+                if shown.isEmpty { Text(store.data.notes.isEmpty ? "No notes yet." : "No matching notes.").foregroundStyle(.secondary).padding(.top, 20) }
             }
+            .padding(16)
         }
-        .padding(14)
     }
 
-    func chip(_ text: String, _ value: String?) -> some View {
-        let on = label == value
-        return Button { label = value } label: {
-            Text(text).font(.system(size: 12, weight: .semibold, design: .rounded)).padding(.horizontal, 10).padding(.vertical, 4)
-                .foregroundStyle(on ? .white : .primary)
-                .background(Capsule().fill(on ? Destination.notes.tint : Color.primary.opacity(0.06)))
-        }.buttonStyle(.plain)
+    func group(_ title: String) -> some View {
+        Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).padding(.top, 8).padding(.leading, 2)
+    }
+
+    func row(_ n: Note) -> some View {
+        NoteCard(note: n, selected: ui.selected == n.id)
+            .onTapGesture { ui.open(n.id) }
+            .contextMenu {
+                Button(n.isPinned ? "Unpin" : "Pin") { store.setPinned(note: n.id, !n.isPinned) }
+                Menu("Colour") {
+                    Button("Default") { var m = n; m.color = 0; store.save(m) }
+                    ForEach(NoteColors.all) { sw in Button(sw.name) { var m = n; m.color = sw.key; store.save(m) } }
+                }
+                Divider()
+                Button("Delete", role: .destructive) { if ui.selected == n.id { ui.selected = nil }; store.deleteNote(n.id) }
+            }
     }
 }
 
-struct NoteRow: View {
+/// A note as a card in its colour, like the phone.
+struct NoteCard: View {
     @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
     let note: Note
     let selected: Bool
     var body: some View {
         let text = NoteCodec.plainText(note.body)
-        let firstLine = text.split(separator: "\n").first.map(String.init) ?? ""
-        let title = note.title.isEmpty ? (firstLine.isEmpty ? "Untitled" : firstLine) : note.title
-        let preview = note.title.isEmpty ? text.split(separator: "\n").dropFirst().joined(separator: " ") : text.replacingOccurrences(of: "\n", with: " ")
-        HStack(alignment: .top, spacing: 8) {
-            if note.color != 0, let c = NoteColors.color(note.color) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 4) }
-            VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                    Spacer()
-                    if note.isPinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
-                }
-                if !preview.isEmpty { Text(preview).font(.system(size: 12.5)).foregroundStyle(.secondary).lineLimit(2) }
-                HStack(spacing: 6) {
-                    Text(note.updatedAt.formatted(.relative(presentation: .named))).foregroundStyle(.tertiary)
-                    let labels = store.labels(of: note)
-                    if !labels.isEmpty { Text(labels.prefix(3).map { "#" + $0 }.joined(separator: " ")).foregroundStyle(Destination.notes.tint).lineLimit(1) }
-                }
-                .font(.system(size: 11))
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        let title = note.title.isEmpty ? (lines.first ?? "Untitled") : note.title
+        let preview = (note.title.isEmpty ? Array(lines.dropFirst()) : lines).prefix(3).joined(separator: "\n")
+        let fill = NoteColors.color(note.color)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                Spacer()
+                if note.isPinned { Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(.secondary) }
             }
+            let labels = store.labels(of: note)
+            if !labels.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(labels.prefix(3), id: \.self) { l in
+                        Label(l, systemImage: "tag").labelStyle(CompactLabel()).font(.system(size: 10.5, weight: .medium))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.07)))
+                    }
+                }
+            }
+            if !preview.isEmpty { Text(preview).font(.system(size: 12.5)).foregroundStyle(.secondary).lineLimit(3) }
+            Text(note.updatedAt.formatted(.relative(presentation: .named))).font(.system(size: 10.5)).foregroundStyle(.tertiary)
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(selected ? Destination.notes.tint.opacity(0.18) : Color.clear))
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .surface(fill: fill ?? scheme.card)
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
         .contentShape(Rectangle())
     }
 }
 
-/// The note editor: a centred writing column, a floating glass format bar.
+/// The note editor: a centred writing column and a floating format bar.
 struct NotePane: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var ui: NotesUI
@@ -150,8 +154,10 @@ struct NotePane: View {
     @State private var newLabel = ""
     @State private var newItem = ""
     @State private var loaded = false
+    @State private var words = 0
     @State private var pendingSave: Task<Void, Never>?
     @StateObject private var controller = RichTextController()
+    @Environment(\.scheme) private var scheme
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -171,7 +177,7 @@ struct NotePane: View {
                         }
                     }
                     TextField("Title", text: $note.title, axis: .vertical)
-                        .font(.system(size: 30, weight: .bold))
+                        .font(.system(size: 28, weight: .bold))
                         .textFieldStyle(.plain)
                         .onChange(of: note.title) { _, _ in changed() }
                     labelRow
@@ -190,17 +196,16 @@ struct NotePane: View {
                 .frame(maxWidth: .infinity)
             }
             FormatBar(controller: controller)
-                .padding(.horizontal, 16).padding(.vertical, 9)
-                .glassCapsule()
-                .padding(.bottom, 20)
+                .padding(.horizontal, 12).frame(height: 38)
+                .surface(Radius.inner)
+                .padding(.bottom, 18)
         }
-        .background(NoteColors.color(note.color)?.opacity(0.28) ?? Color.clear)
+        .background(NoteColors.color(note.color)?.opacity(0.35) ?? scheme.card)
         .onAppear(perform: load)
         .onDisappear { save() }
     }
 
     var meta: String {
-        let words = NoteCodec.plainText(NoteCodec.encode(html, checklist: checklist)).split(whereSeparator: \.isWhitespace).count
         let edited = note.id == 0 ? "New note" : "Edited " + note.updatedAt.formatted(.relative(presentation: .named))
         return "\(edited) · \(words) word\(words == 1 ? "" : "s")"
     }
@@ -214,8 +219,7 @@ struct NotePane: View {
                 }
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .foregroundStyle(Destination.notes.tint)
-                .background(Capsule().fill(Destination.notes.tint.opacity(0.14)))
+                .background(RoundedRectangle(cornerRadius: Radius.small).fill(Color.primary.opacity(0.07)))
             }
             TextField("Add #label", text: $newLabel).textFieldStyle(.plain).font(.system(size: 12)).frame(width: 100).onSubmit {
                 let l = newLabel.trimmingCharacters(in: .whitespaces).droppingPrefix("#").lowercased()
@@ -252,6 +256,7 @@ struct NotePane: View {
         let d = NoteCodec.decode(note.body)
         html = d.html; checklist = d.checklist; media = d.media
         labels = store.labels(of: note)
+        countWords()
         if noteId == 0, let presetLabel, presetLabel != "__pinned" { labels = [presetLabel] }
     }
 
@@ -259,7 +264,11 @@ struct NotePane: View {
     func changed() {
         guard loaded else { return }
         pendingSave?.cancel()
-        pendingSave = Task { try? await Task.sleep(for: .milliseconds(700)); if !Task.isCancelled { save() } }
+        pendingSave = Task { try? await Task.sleep(for: .milliseconds(700)); if !Task.isCancelled { countWords(); save() } }
+    }
+
+    func countWords() {
+        words = NoteCodec.plainText(NoteCodec.encode(html, checklist: checklist)).split(whereSeparator: \.isWhitespace).count
     }
 
     func save() {

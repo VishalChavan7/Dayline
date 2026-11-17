@@ -14,17 +14,128 @@ extension Color {
 
     /// Light/dark pair that follows the window's appearance.
     static func dynamic(light: Color, dark: Color) -> Color {
-        Color(nsColor: NSColor(name: nil) { a in
-            a.bestMatch(from: [.darkAqua, .vibrantDark]) != nil ? NSColor(dark) : NSColor(light)
-        })
+        let l = NSColor(light), d = NSColor(dark)
+        return Color(nsColor: NSColor(name: nil) { a in a.bestMatch(from: [.darkAqua, .vibrantDark]) != nil ? d : l })
     }
+}
+
+/// Hue/saturation/lightness, used to build the same tonal colours as the phone.
+struct HSL {
+    var h: Double, s: Double, l: Double
+
+    init(h: Double, s: Double, l: Double) { self.h = h; self.s = s; self.l = l }
+
+    init(argb: Int32) {
+        let v = UInt32(bitPattern: argb)
+        let r = Double((v >> 16) & 0xFF) / 255, g = Double((v >> 8) & 0xFF) / 255, b = Double(v & 0xFF) / 255
+        let mx = max(r, g, b), mn = min(r, g, b), d = mx - mn
+        l = (mx + mn) / 2
+        if d == 0 { h = 0; s = 0; return }
+        s = d / (1 - abs(2 * l - 1))
+        switch mx {
+        case r: h = 60 * ((g - b) / d).truncatingRemainder(dividingBy: 6)
+        case g: h = 60 * ((b - r) / d + 2)
+        default: h = 60 * ((r - g) / d + 4)
+        }
+        if h < 0 { h += 360 }
+    }
+
+    static func tone(_ h: Double, _ s: Double, _ l: Double) -> Color {
+        let h = (h.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360)
+        let s = min(1, max(0, s)), l = min(1, max(0, l))
+        let c = (1 - abs(2 * l - 1)) * s
+        let x = c * (1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1))
+        let m = l - c / 2
+        let (r, g, b): (Double, Double, Double)
+        switch h {
+        case 0..<60: (r, g, b) = (c, x, 0)
+        case 60..<120: (r, g, b) = (x, c, 0)
+        case 120..<180: (r, g, b) = (0, c, x)
+        case 180..<240: (r, g, b) = (0, x, c)
+        case 240..<300: (r, g, b) = (x, 0, c)
+        default: (r, g, b) = (c, 0, x)
+        }
+        return Color(.sRGB, red: r + m, green: g + m, blue: b + m, opacity: 1)
+    }
+}
+
+/// The app's colours, derived from the accent exactly like the phone's colour scheme, with
+/// calm Mac-style surfaces: a soft tinted window background and solid, lightly frosted cards.
+struct Scheme {
+    let primary: Color
+    let primaryContainer: Color
+    let onPrimaryContainer: Color
+    let tertiary: Color
+    let tertiaryContainer: Color
+    let onTertiaryContainer: Color
+    let background: Color
+    let card: Color
+    let cardStroke: Color
+    /// Inset fills inside cards: search fields, chips, tiles.
+    let well: Color
+    let selection: Color
+
+    @MainActor private static var cache: [Int32: Scheme] = [:]
+
+    @MainActor static func of(_ seed: Int32) -> Scheme {
+        if let s = cache[seed] { return s }
+        let s = make(seed)
+        cache[seed] = s
+        return s
+    }
+
+    static func make(_ seed: Int32) -> Scheme {
+        let c = HSL(argb: seed)
+        let h = c.h, s = min(0.85, max(0.35, c.s))
+        func t(_ dh: Double, _ ss: Double, _ l: Double) -> Color { HSL.tone(h + dh, ss, l) }
+        return Scheme(
+            primary: .dynamic(light: t(0, s, 0.45), dark: t(0, s, 0.74)),
+            primaryContainer: .dynamic(light: t(0, s, 0.91), dark: t(0, s * 0.7, 0.26)),
+            onPrimaryContainer: .dynamic(light: t(0, s, 0.17), dark: t(0, s, 0.90)),
+            tertiary: .dynamic(light: t(60, s * 0.6, 0.40), dark: t(60, s * 0.6, 0.76)),
+            tertiaryContainer: .dynamic(light: t(60, s * 0.7, 0.91), dark: t(60, s * 0.5, 0.25)),
+            onTertiaryContainer: .dynamic(light: t(60, s * 0.6, 0.16), dark: t(60, s * 0.6, 0.90)),
+            background: .dynamic(light: t(0, 0.12, 0.952), dark: t(0, 0.06, 0.105)),
+            card: .dynamic(light: Color.white.opacity(0.88), dark: t(0, 0.06, 0.155)),
+            cardStroke: .dynamic(light: Color.black.opacity(0.07), dark: Color.white.opacity(0.07)),
+            well: .dynamic(light: t(0, 0.10, 0.935), dark: t(0, 0.06, 0.205)),
+            selection: .dynamic(light: t(0, s, 0.45).opacity(0.12), dark: t(0, s, 0.74).opacity(0.16))
+        )
+    }
+}
+
+private struct SchemeKey: EnvironmentKey {
+    static let defaultValue = Scheme.make(Int32(bitPattern: 0xFF2F7DF6))
+}
+
+extension EnvironmentValues {
+    var scheme: Scheme {
+        get { self[SchemeKey.self] }
+        set { self[SchemeKey.self] = newValue }
+    }
+}
+
+/// Soft container and readable foreground for a user colour (habits, labels), as on the phone.
+enum ItemColor {
+    @MainActor private static var cache: [Int32: (Color, Color)] = [:]
+
+    @MainActor static func pair(_ argb: Int32) -> (container: Color, content: Color) {
+        if let p = cache[argb] { return p }
+        let c = HSL(argb: argb)
+        let p = (Color.dynamic(light: HSL.tone(c.h, c.s * 0.7, 0.92), dark: HSL.tone(c.h, c.s * 0.55, 0.24)),
+                 Color.dynamic(light: HSL.tone(c.h, c.s, 0.40), dark: HSL.tone(c.h, c.s, 0.76)))
+        cache[argb] = p
+        return p
+    }
+    @MainActor static func container(_ argb: Int32) -> Color { pair(argb).container }
+    @MainActor static func content(_ argb: Int32) -> Color { pair(argb).content }
 }
 
 enum Palette {
     /// Accents offered in Settings (same as the phone).
     static let accents: [Int32] = ([0xFF2F7DF6, 0xFF3E9B4F, 0xFFE0892B, 0xFFE5484D, 0xFFD6409F, 0xFF8E4EC6] as [UInt32]).map { Int32(bitPattern: $0) }
     static let accentNames = ["Blue", "Green", "Amber", "Red", "Pink", "Violet"]
-    /// Wider set for projects, lists, habits and labels.
+    /// Wider set for habits and labels.
     static let itemColors: [Int32] = ([0xFF4F5BD5, 0xFF0E9F8E, 0xFF2F7DF6, 0xFF3E9B4F, 0xFFE0892B, 0xFFE5484D, 0xFFD6409F, 0xFF8E4EC6,
         0xFF6E56CF, 0xFF00A2C7, 0xFFC2410C, 0xFF64748B] as [UInt32]).map { Int32(bitPattern: $0) }
 }
@@ -40,22 +151,24 @@ enum NoteColors {
         Swatch(key: 9, name: "Blossom", light: 0xF6E2DD, dark: 0x6C394F), Swatch(key: 10, name: "Clay", light: 0xE9E3D4, dark: 0x4B443A),
         Swatch(key: 11, name: "Chalk", light: 0xEFEFF1, dark: 0x232427),
     ]
-    static func color(_ key: Int32) -> Color? {
-        all.first { $0.key == key }.map { Color.dynamic(light: Color(hex: $0.light), dark: Color(hex: $0.dark)) }
-    }
+    private static let colors: [Int32: Color] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, Color.dynamic(light: Color(hex: $0.light), dark: Color(hex: $0.dark))) })
+    static func color(_ key: Int32) -> Color? { colors[key] }
 }
 
 extension Priority {
-    var color: Color {
-        switch self {
-        case .URGENT: .dynamic(light: Color(hex: 0xD92D3A), dark: Color(hex: 0xFF8A8F))
-        case .HIGH: .dynamic(light: Color(hex: 0xD9700A), dark: Color(hex: 0xFFB366))
-        case .MEDIUM: .dynamic(light: Color(hex: 0x2F6BE0), dark: Color(hex: 0x8FB2FF))
-        case .LOW: .dynamic(light: Color(hex: 0x5E7A68), dark: Color(hex: 0x9DB0A3))
-        }
-    }
+    var color: Color { PriorityColors.of(self) }
     var symbol: String {
         switch self { case .URGENT: "exclamationmark.3"; case .HIGH: "exclamationmark.2"; case .MEDIUM: "exclamationmark"; case .LOW: "arrow.down" }
+    }
+}
+
+enum PriorityColors {
+    static let urgent = Color.dynamic(light: Color(hex: 0xD92D3A), dark: Color(hex: 0xFF8A8F))
+    static let high = Color.dynamic(light: Color(hex: 0xD9700A), dark: Color(hex: 0xFFB366))
+    static let medium = Color.dynamic(light: Color(hex: 0x2F6BE0), dark: Color(hex: 0x8FB2FF))
+    static let low = Color.dynamic(light: Color(hex: 0x5E7A68), dark: Color(hex: 0x9DB0A3))
+    static func of(_ p: Priority) -> Color {
+        switch p { case .URGENT: urgent; case .HIGH: high; case .MEDIUM: medium; case .LOW: low }
     }
 }
 
@@ -86,9 +199,20 @@ enum Icons {
 }
 
 /// Date and time text that follows the shared date/time format settings.
+/// Formatters are created once and reused: making one per row is slow.
 @MainActor
 struct Formats {
     let store: Store
+
+    private static var formatters: [String: DateFormatter] = [:]
+
+    static func formatter(_ pattern: String) -> DateFormatter {
+        if let f = formatters[pattern] { return f }
+        let f = DateFormatter()
+        if pattern == "#short-time" { f.timeStyle = .short; f.dateStyle = .none } else { f.dateFormat = pattern }
+        formatters[pattern] = f
+        return f
+    }
 
     func date(_ d: Day, relative: Bool = true) -> String {
         let today = store.today
@@ -101,31 +225,31 @@ struct Formats {
             default: break
             }
         }
-        let f = DateFormatter()
+        let pattern: String
         switch store.dateFormat {
-        case "DAY_MONTH": f.dateFormat = d.year == today.year ? "d MMM" : "d MMM yyyy"
-        case "NUMERIC_DMY": f.dateFormat = "dd/MM/yyyy"
-        case "NUMERIC_MDY": f.dateFormat = "MM/dd/yyyy"
-        case "ISO": f.dateFormat = "yyyy-MM-dd"
-        default: f.dateFormat = d.year == today.year ? "MMM d" : "MMM d, yyyy"
+        case "DAY_MONTH": pattern = d.year == today.year ? "d MMM" : "d MMM yyyy"
+        case "NUMERIC_DMY": pattern = "dd/MM/yyyy"
+        case "NUMERIC_MDY": pattern = "MM/dd/yyyy"
+        case "ISO": pattern = "yyyy-MM-dd"
+        default: pattern = d.year == today.year ? "MMM d" : "MMM d, yyyy"
         }
-        return f.string(from: d.date())
+        return Formats.formatter(pattern).string(from: d.date())
     }
 
     func time(_ t: TimeOfDay) -> String {
-        let f = DateFormatter()
+        let pattern: String
         switch store.timeFormat {
-        case "H12": f.dateFormat = "h:mm a"
-        case "H24": f.dateFormat = "HH:mm"
-        default: f.timeStyle = .short
+        case "H12": pattern = "h:mm a"
+        case "H24": pattern = "HH:mm"
+        default: pattern = "#short-time"
         }
-        return f.string(from: Day.today().date(at: t))
+        return Formats.formatter(pattern).string(from: Day.today().date(at: t))
     }
 
     func due(_ t: TaskItem) -> String? {
         guard let d = t.scheduledDate else { return nil }
         let time = t.dueTime ?? t.startTime
-        return time.map { "\(date(d)), \(self.time($0))" } ?? date(d)
+        return time.map { "\(date(d)) \(self.time($0))" } ?? date(d)
     }
 
     static func minutes(_ m: Int) -> String {
@@ -134,27 +258,30 @@ struct Formats {
     }
 }
 
+/// A plain card: solid surface, hairline edge, modest corners.
 struct Card<Content: View>: View {
-    var padding: CGFloat = 18
-    var tint: Color?
+    var padding: CGFloat = 16
+    var fill: Color?
     @ViewBuilder var content: Content
     var body: some View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glass(Radius.card, tint: tint)
+            .surface(fill: fill)
     }
 }
 
+/// Coloured header label for groups of rows (like "Tomorrow" or "Pinned" on the phone).
 struct SectionHeader: View {
     let title: String
     var count: Int?
-    var color: Color = .secondary
+    var color: Color?
+    @Environment(\.scheme) private var scheme
     var body: some View {
         HStack(spacing: 6) {
-            Text(title).font(.headline).foregroundStyle(color)
-            if let count { Text("\(count)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(color ?? scheme.primary)
             Spacer()
+            if let count { Text("\(count)").font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary) }
         }
     }
 }
@@ -163,28 +290,58 @@ struct EmptyState: View {
     let symbol: String
     let title: String
     var message: String = ""
+    @Environment(\.scheme) private var scheme
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 38, weight: .light)).foregroundStyle(.tint.opacity(0.7))
-            Text(title).font(.title3.weight(.semibold))
-            if !message.isEmpty { Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 320) }
+        VStack(spacing: 12) {
+            Image(systemName: symbol).font(.system(size: 26, weight: .medium)).foregroundStyle(scheme.primary)
+                .frame(width: 60, height: 60)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(scheme.primaryContainer))
+            Text(title).font(.system(size: 16, weight: .semibold))
+            if !message.isEmpty { Text(message).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 320) }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-/// A coloured dot or icon badge for projects, lists and habits.
+/// Tonal icon tile, like the phone's icon badges.
+struct IconBadge: View {
+    let symbol: String
+    let color: Color
+    var size: CGFloat = 32
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.48, weight: .semibold))
+            .foregroundStyle(color)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous).fill(color.opacity(0.15)))
+    }
+}
+
+/// Icon tile in a user colour (habits).
 struct ColorBadge: View {
     let color: Int32
     var symbol: String?
     var size: CGFloat = 22
     var body: some View {
+        let p = ItemColor.pair(color)
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.3, style: .continuous).fill(Color(argb: color).gradient)
-            if let symbol { Image(systemName: symbol).font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(.white) }
+            RoundedRectangle(cornerRadius: size * 0.3, style: .continuous).fill(p.container)
+            if let symbol { Image(systemName: symbol).font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(p.content) }
         }
         .frame(width: size, height: size)
+    }
+}
+
+/// Small count bubble used in section headers.
+struct CountPill: View {
+    let text: String
+    let color: Color
+    var body: some View {
+        Text(text).font(.system(size: 11, weight: .semibold).monospacedDigit())
+            .foregroundStyle(color)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(0.15)))
     }
 }
 
@@ -227,13 +384,15 @@ struct Ring: View {
     let progress: Double
     var lineWidth: CGFloat = 10
     var color: Color = .accentColor
+    var track: Color?
     var body: some View {
         ZStack {
-            Circle().stroke(color.opacity(0.15), lineWidth: lineWidth)
+            Circle().stroke(track ?? color.opacity(0.15), lineWidth: lineWidth)
             Circle().trim(from: 0, to: min(1, max(0, progress)))
                 .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .animation(.spring(duration: 0.6), value: progress)
+                .animation(.easeOut(duration: 0.4), value: progress)
         }
+        .padding(lineWidth / 2)
     }
 }

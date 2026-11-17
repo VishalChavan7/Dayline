@@ -10,17 +10,16 @@ struct StatsView: View {
     var body: some View {
         let r = StatsCalculator.report(store.data, period: period, anchor: anchor, today: store.today, weekStart: store.weekStart)
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
+                ScreenTitle(title: "Statistics", subtitle: rangeText(r))
                 HStack {
-                    Picker("Period", selection: $period) { ForEach(StatsPeriod.allCases, id: \.self) { Text($0.label).tag($0) } }
-                        .pickerStyle(.segmented).labelsHidden().frame(width: 240)
+                    Segmented(options: StatsPeriod.allCases, selection: $period) { $0.label }
                     Spacer()
-                    Button { anchor = shift(-1) } label: { Image(systemName: "chevron.left") }
-                    Text(rangeText(r)).font(.headline).frame(minWidth: 200)
-                    Button { anchor = shift(1) } label: { Image(systemName: "chevron.right") }.disabled(!(r.end < store.today))
-                    Button("Now") { anchor = store.today }
+                    IconButton(symbol: "chevron.left", help: "Previous") { anchor = shift(-1) }
+                    Text(rangeText(r)).font(.system(size: 13, weight: .semibold)).frame(minWidth: 180)
+                    IconButton(symbol: "chevron.right", help: "Next") { anchor = shift(1) }.disabled(!(r.end < store.today))
+                    Button("Now") { anchor = store.today }.buttonStyle(.tonal)
                 }
-                .buttonStyle(.bordered)
 
                 if !r.hasAnyData {
                     EmptyState(symbol: "chart.bar", title: "No activity yet", message: "Complete tasks, check in habits or run a focus session, and your trends show up here.")
@@ -71,22 +70,6 @@ struct StatsView: View {
                             }
                         }
                     }
-                    if !r.projectProgress.isEmpty {
-                        Card {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Projects").font(.headline)
-                                ForEach(r.projectProgress.prefix(8), id: \.projectId) { p in
-                                    HStack {
-                                        Circle().fill(Color(argb: p.color)).frame(width: 8, height: 8)
-                                        Text(p.name).frame(width: 160, alignment: .leading).lineLimit(1)
-                                        ProgressView(value: p.fraction).tint(Color(argb: p.color))
-                                        Text("\(p.completed)/\(p.total)").monospacedDigit().frame(width: 54, alignment: .trailing).foregroundStyle(.secondary)
-                                        Text(Formats.minutes(p.focusMinutes)).monospacedDigit().frame(width: 56, alignment: .trailing).foregroundStyle(.orange)
-                                    }.font(.callout)
-                                }
-                            }
-                        }
-                    }
                     Card {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Completed tasks — last 18 weeks").font(.headline)
@@ -95,7 +78,7 @@ struct StatsView: View {
                     }
                 }
             }
-            .padding(24)
+            .padding(.horizontal, 28).padding(.vertical, 22)
             .frame(maxWidth: 1100)
             .frame(maxWidth: .infinity)
         }
@@ -118,15 +101,16 @@ struct StatsView: View {
     func tile(_ title: String, _ value: String, change: Int? = nil, sub: String? = nil, symbol: String, color: Color) -> some View {
         Card(padding: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Label(title, systemImage: symbol).font(.caption.weight(.semibold)).foregroundStyle(color)
+                Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(color)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(value).font(.title.weight(.bold).monospacedDigit())
+                    Text(value).font(.system(size: 24, weight: .semibold).monospacedDigit())
                     if let change {
                         Text("\(change >= 0 ? "▲" : "▼") \(abs(change))%").font(.caption.weight(.semibold))
                             .foregroundStyle(change >= 0 ? StatusColor.success : StatusColor.overdue)
                             .help("Compared with the previous \(period.label.lowercased())")
                     }
                 }
+                Text(title).font(.system(size: 12.5, weight: .medium))
                 Text(sub ?? " ").font(.caption).foregroundStyle(.secondary)
             }
         }

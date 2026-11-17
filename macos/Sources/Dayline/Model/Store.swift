@@ -6,10 +6,19 @@ import DaylineCore
 /// syncs through Google Drive), saved to Application Support after every change.
 @MainActor
 final class Store: ObservableObject {
-    @Published private(set) var data: DaylineData
-    /// Bumps on every change so views and services can react.
-    @Published private(set) var revision = 0
+    @Published private(set) var data: DaylineData { didSet { _index = nil } }
+    /// Bumps on every change.
+    private(set) var revision = 0
     @Published var notice: String?
+
+    /// Lookup tables rebuilt lazily after each change, so rows don't scan every list on each redraw.
+    private var _index: StoreIndex?
+    private var index: StoreIndex {
+        if let i = _index { return i }
+        let i = StoreIndex(data)
+        _index = i
+        return i
+    }
 
     private let fileURL: URL
     private var saveTask: Task<Void, Never>?
@@ -127,22 +136,21 @@ final class Store: ObservableObject {
 
     // MARK: Lookups
 
-    func task(_ id: Int64?) -> TaskItem? { id.flatMap { id in data.tasks.first { $0.id == id } } }
+    func task(_ id: Int64?) -> TaskItem? { id.flatMap { index.taskPos[$0] }.map { data.tasks[$0] } }
     func project(_ id: Int64?) -> Project? { id.flatMap { id in data.projects.first { $0.id == id } } }
     func list(_ id: Int64?) -> TaskList? { id.flatMap { id in data.lists.first { $0.id == id } } }
     func habit(_ id: Int64?) -> Habit? { id.flatMap { id in data.habits.first { $0.id == id } } }
     func note(_ id: Int64?) -> Note? { id.flatMap { id in data.notes.first { $0.id == id } } }
-    func subtasks(of id: Int64) -> [Subtask] { data.subtasks.filter { $0.taskId == id }.sorted { $0.position < $1.position } }
-    func tags(of id: Int64) -> [Tag] {
-        let ids = Set(data.taskTags.filter { $0.taskId == id }.map(\.tagId))
-        return data.tags.filter { ids.contains($0.id) }.sorted { $0.name.localizedLowercase < $1.name.localizedLowercase }
-    }
-    func reminders(of id: Int64) -> [Reminder] { data.reminders.filter { $0.taskId == id } }
+    func subtasks(of id: Int64) -> [Subtask] { index.subtasks[id] ?? [] }
+    func tags(of id: Int64) -> [Tag] { index.tags[id] ?? [] }
+    func reminders(of id: Int64) -> [Reminder] { index.reminders[id] ?? [] }
     func attachments(of id: Int64) -> [Attachment] { data.attachments.filter { $0.taskId == id } }
-    func dependsOn(_ id: Int64) -> [TaskItem] { data.dependencies.filter { $0.taskId == id }.compactMap { task($0.dependsOnTaskId) } }
+    func attachmentCount(of id: Int64) -> Int { index.attachmentCounts[id] ?? 0 }
+    func dependsOn(_ id: Int64) -> [TaskItem] { (index.dependsOn[id] ?? []).compactMap { task($0) } }
     func blockers(of id: Int64) -> [TaskItem] { dependsOn(id).filter { !$0.isCompleted } }
-    func completions(of habitId: Int64) -> [HabitCompletion] { data.habitCompletions.filter { $0.habitId == habitId } }
-    func count(_ habitId: Int64, on day: Day) -> Int { data.habitCompletions.first { $0.habitId == habitId && $0.date == day }?.count ?? 0 }
+    func isBlocked(_ id: Int64) -> Bool { (index.dependsOn[id] ?? []).contains { task($0).map { !$0.isCompleted } ?? false } }
+    func completions(of habitId: Int64) -> [HabitCompletion] { index.completions[habitId] ?? [] }
+    func count(_ habitId: Int64, on day: Day) -> Int { index.counts[habitId]?[day] ?? 0 }
 
     /// Progress 0…1 from subtasks when there are any, otherwise the manual progress.
     func progress(of t: TaskItem) -> Double {
@@ -151,9 +159,8 @@ final class Store: ObservableObject {
         return Double(s.filter(\.isDone).count) / Double(s.count)
     }
 
-    var openTasks: [TaskItem] { data.tasks.filter { !$0.isCompleted } }
-    var activeProjects: [Project] { data.projects.filter { !$0.isArchived }.sorted { ($0.sortOrder, $0.id) < ($1.sortOrder, $1.id) } }
-    var activeHabits: [Habit] { data.habits.filter { !$0.isArchived }.sorted { ($0.sortOrder, $0.id) < ($1.sortOrder, $1.id) } }
+    var openTasks: [TaskItem] { index.open }
+    var activeHabits: [Habit] { index.activeHabits }
     var customReminders: [Reminder] { data.reminders.filter { $0.type == .CUSTOM && $0.taskId == nil } }
 
     // MARK: Tasks
@@ -252,7 +259,7 @@ final class Store: ObservableObject {
         t.dueDate = p.date ?? date
         t.priority = p.priority ?? priority ?? defaultPriority
         t.projectId = projectId
-        t.listId = listId ?? (projectId == nil ? defaultListId.flatMap { list($0)?.id } : nil)
+        t.listId = listId
         var reminders: [Reminder] = []
         if t.dueDate != nil, let off = defaultReminderOffset { reminders.append(Reminder(id: 0, taskId: 0, type: .DEADLINE, offsetMinutes: off)) }
         return save(TaskDraft(task: t, tagNames: p.tags, reminders: reminders))
@@ -546,22 +553,19 @@ final class Store: ObservableObject {
         changed()
     }
 
-    func focusMinutes(on day: Day) -> Int {
-        Int(data.focusSessions.filter { Day($0.startedAt) == day }.reduce(Int64(0)) { $0 + $1.focusedMillis } / 60_000)
-    }
+    func focusMinutes(on day: Day) -> Int { Int((index.focusMillis[day] ?? 0) / 60_000) }
 
     // MARK: Search
 
-    func search(_ query: String) -> (tasks: [TaskItem], projects: [Project], lists: [TaskList], tags: [Tag], notes: [Note]) {
+    func search(_ query: String) -> (tasks: [TaskItem], notes: [Note]) {
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return ([], [], [], [], []) }
+        guard !q.isEmpty else { return ([], []) }
         func m(_ s: String?) -> Bool { s?.localizedCaseInsensitiveContains(q) ?? false }
         let tagHits = data.tags.filter { m($0.name) }
         let tagTaskIds = Set(data.taskTags.filter { t in tagHits.contains { $0.id == t.tagId } }.map(\.taskId))
         let tasks = data.tasks.filter { m($0.title) || m($0.description) || m($0.notes) || tagTaskIds.contains($0.id) }
             .sorted { a, b in a.isCompleted != b.isCompleted ? !a.isCompleted : TaskGrouping.chronological(a, b) }
-        return (tasks, data.projects.filter { m($0.name) || m($0.description) }, data.lists.filter { m($0.name) }, tagHits,
-                data.notes.filter { m($0.title) || m(NoteCodec.plainText($0.body)) || m($0.category) })
+        return (tasks, data.notes.filter { m($0.title) || m(NoteCodec.plainText($0.body)) || m($0.category) })
     }
 }
 
@@ -586,7 +590,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .PROGRESS: "Completion ring and counts"; case .OVERDUE: "Tasks past their due date"; case .TODAY: "Everything planned for today"
-        case .INBOX: "Tasks without a date, project or list"; case .DEADLINES: "Due in the next 7 days"; case .FOCUS: "Today's focus time and quick start"
+        case .INBOX: "Tasks without a date"; case .DEADLINES: "Due in the next 7 days"; case .FOCUS: "Today's focus time and quick start"
         case .WEEKLY: "Tasks completed this week"; case .QUOTE: "A line to start the day"
         }
     }
@@ -598,4 +602,40 @@ extension Comparable {
 
 extension String {
     func droppingPrefix(_ p: String) -> String { hasPrefix(p) ? String(dropFirst(p.count)) : self }
+}
+
+/// Lookup tables for one version of the data.
+private struct StoreIndex {
+    var taskPos: [Int64: Int] = [:]
+    var open: [TaskItem] = []
+    var subtasks: [Int64: [Subtask]] = [:]
+    var tags: [Int64: [Tag]] = [:]
+    var reminders: [Int64: [Reminder]] = [:]
+    var attachmentCounts: [Int64: Int] = [:]
+    var dependsOn: [Int64: [Int64]] = [:]
+    var completions: [Int64: [HabitCompletion]] = [:]
+    var counts: [Int64: [Day: Int]] = [:]
+    var activeHabits: [Habit] = []
+    var focusMillis: [Day: Int64] = [:]
+
+    init(_ d: DaylineData) {
+        for (i, t) in d.tasks.enumerated() {
+            taskPos[t.id] = i
+            if !t.isCompleted { open.append(t) }
+        }
+        for s in d.subtasks { subtasks[s.taskId, default: []].append(s) }
+        for k in subtasks.keys { subtasks[k]?.sort { $0.position < $1.position } }
+        let tagById = Dictionary(d.tags.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for tt in d.taskTags { if let t = tagById[tt.tagId] { tags[tt.taskId, default: []].append(t) } }
+        for k in tags.keys { tags[k]?.sort { $0.name.localizedLowercase < $1.name.localizedLowercase } }
+        for r in d.reminders { if let id = r.taskId { reminders[id, default: []].append(r) } }
+        for a in d.attachments { attachmentCounts[a.taskId, default: 0] += 1 }
+        for dep in d.dependencies { dependsOn[dep.taskId, default: []].append(dep.dependsOnTaskId) }
+        for c in d.habitCompletions {
+            completions[c.habitId, default: []].append(c)
+            counts[c.habitId, default: [:]][c.date] = c.count
+        }
+        activeHabits = d.habits.filter { !$0.isArchived }.sorted { ($0.sortOrder, $0.id) < ($1.sortOrder, $1.id) }
+        for f in d.focusSessions { focusMillis[Day(f.startedAt), default: 0] += f.focusedMillis }
+    }
 }

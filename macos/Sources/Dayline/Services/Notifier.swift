@@ -66,7 +66,6 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                     content.title = t.title
                     var parts: [String] = []
                     if let due = Formats(store: store).due(t) { parts.append("Due \(due)") }
-                    if let p = store.project(t.projectId) { parts.append(p.name) }
                     content.body = parts.joined(separator: " · ")
                     content.categoryIdentifier = "TASK"
                     content.userInfo = ["taskId": t.id]

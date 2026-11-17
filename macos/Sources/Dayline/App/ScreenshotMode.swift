@@ -32,8 +32,8 @@ enum ScreenshotMode {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         try? await Task.sleep(for: .seconds(1.5))
-        let shots: [(String, Destination)] = [("today", .today), ("upcoming", .upcoming), ("calendar", .calendar), ("habits", .habits),
-                                              ("focus", .focus), ("notes", .notes), ("stats", .stats), ("project", .project(1)), ("inbox", .inbox)]
+        let shots: [(String, Destination)] = [("today", .today), ("calendar", .calendar), ("notes", .notes), ("habits", .habits), ("inbox", .inbox),
+                                              ("upcoming", .upcoming), ("all", .all), ("focus", .focus), ("stats", .stats)]
         for (mode, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
             for (name, d) in shots {
@@ -87,18 +87,11 @@ enum DemoData {
         let today = Day.today()
         let now = Date()
         func c(_ hex: UInt32) -> Int32 { Int32(bitPattern: hex) }
-        var p1 = Project(id: 1, name: "Website relaunch", color: c(0xFF4F5BD5)); p1.icon = "rocket"; p1.description = "New site and launch campaign"; p1.deadline = today.plusDays(12)
-        var p2 = Project(id: 2, name: "Home", color: c(0xFF0E9F8E)); p2.icon = "home"
-        var p3 = Project(id: 3, name: "Fitness", color: c(0xFFE0892B)); p3.icon = "fitness"
-        d.projects = [p1, p2, p3]
-        var l1 = TaskList(id: 1, name: "Design", color: c(0xFF8E4EC6)); l1.projectId = 1
-        let l2 = TaskList(id: 2, name: "Groceries", color: c(0xFF3E9B4F))
-        d.lists = [l1, l2]
         var id: Int64 = 0
         func task(_ title: String, due: Int?, _ p: Priority = .MEDIUM, project: Int64? = nil, list: Int64? = nil, time: TimeOfDay? = nil, done: Bool = false, doneDaysAgo: Int = 0) -> TaskItem {
             id += 1
             var t = TaskItem(id: id, title: title)
-            t.dueDate = due.map { today.plusDays($0) }; t.priority = p; t.projectId = project; t.listId = list; t.dueTime = time
+            t.dueDate = due.map { today.plusDays($0) }; t.priority = p; t.dueTime = time
             t.isCompleted = done; t.completedAt = done ? now.addingTimeInterval(Double(-doneDaysAgo * 86400 - 3600)) : nil
             t.createdAt = now.addingTimeInterval(-86400 * 10); t.updatedAt = t.createdAt; t.sortOrder = id
             return t
@@ -127,8 +120,8 @@ enum DemoData {
         for k in 1...9 { d.tasks.append(task("Small task \(k)", due: -k, .LOW, done: true, doneDaysAgo: k % 6)) }
         d.subtasks = [Subtask(id: 1, taskId: 1, title: "Outline key points", isDone: true), Subtask(id: 2, taskId: 1, title: "Write first draft", position: 1),
                       Subtask(id: 3, taskId: 1, title: "Get feedback from Sam", position: 2)]
-        d.tags = [Tag(id: 1, name: "work"), Tag(id: 2, name: "errands")]
-        d.taskTags = [TaskTag(taskId: 1, tagId: 1), TaskTag(taskId: 2, tagId: 1), TaskTag(taskId: 4, tagId: 2), TaskTag(taskId: 5, tagId: 2)]
+        d.tags = [Tag(id: 1, name: "work"), Tag(id: 2, name: "errands"), Tag(id: 3, name: "home")]
+        d.taskTags = [TaskTag(taskId: 1, tagId: 1), TaskTag(taskId: 2, tagId: 1), TaskTag(taskId: 3, tagId: 3), TaskTag(taskId: 4, tagId: 2), TaskTag(taskId: 5, tagId: 2), TaskTag(taskId: 8, tagId: 2)]
         d.reminders = [Reminder(id: 1, taskId: 1, type: .DEADLINE, offsetMinutes: 30)]
         d.dependencies = [TaskDependency(taskId: 7, dependsOnTaskId: 1)]
         var h1 = Habit(id: 1, name: "Read 20 pages", color: c(0xFF4F5BD5), startDate: today.minusDays(60)); h1.icon = "book"
@@ -158,7 +151,7 @@ enum DemoData {
             guard minutes > 0 else { continue }
             let start = today.minusDays(back).date(at: TimeOfDay(hour: 10, minute: 0))
             d.focusSessions.append(FocusSession(startedAt: start, endedAt: start.addingTimeInterval(Double(minutes * 60)), focusedMillis: Int64(minutes * 60_000),
-                                                plannedMillis: Int64(minutes * 60_000), taskId: 1, projectId: back % 2 == 0 ? 1 : nil, completed: true))
+                                                plannedMillis: Int64(minutes * 60_000), taskId: 1, projectId: nil, completed: true))
         }
         d.settings = ["user_name": .string("Vishal"), "accent_color": .int(Int64(Int32(bitPattern: 0xFF2F7DF6)))]
         return d

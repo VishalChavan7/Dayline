@@ -2,21 +2,24 @@ import SwiftUI
 import AppKit
 import DaylineCore
 
-/// Details for an existing task, edited live.
+/// Details for an existing task. Edits are kept here and saved a moment after you stop typing,
+/// so typing doesn't redraw the whole window on every key.
 struct TaskInspector: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
     let taskId: Int64
+    @State private var draft: TaskDraft?
+    @State private var pending: Task<Void, Never>?
 
     var body: some View {
-        if let current = store.draft(for: taskId) {
-            let binding = Binding<TaskDraft>(get: { store.draft(for: taskId) ?? current }, set: { store.save($0) })
+        if let current = draft ?? store.draft(for: taskId) {
+            let binding = Binding<TaskDraft>(get: { draft ?? current }, set: { draft = $0; scheduleSave() })
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 10) {
-                        Button { store.setCompleted(taskId, !current.task.isCompleted) } label: {
+                        Button { saveNow(); store.setCompleted(taskId, !current.task.isCompleted) } label: {
                             CheckCircle(done: current.task.isCompleted, color: current.task.priority.color, size: 22)
-                        }.buttonStyle(.plain).padding(.top, 4)
+                        }.buttonStyle(.plain).padding(.top, 3)
                         TextField("Title", text: binding.task.title, axis: .vertical)
                             .font(.title3.weight(.semibold)).textFieldStyle(.plain)
                     }
@@ -24,9 +27,9 @@ struct TaskInspector: View {
                     Divider()
                     HStack {
                         Button { FocusTimer.shared?.start(taskId: taskId); nav.go(.focus) } label: { Label("Focus", systemImage: "timer") }
-                        Button { store.duplicate(taskId) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                        Button { saveNow(); store.duplicate(taskId) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
                         Spacer()
-                        Button(role: .destructive) { deleteTask(store, nav, taskId) } label: { Label("Delete", systemImage: "trash") }
+                        Button(role: .destructive) { pending?.cancel(); pending = nil; deleteTask(store, nav, taskId) } label: { Label("Delete", systemImage: "trash") }
                     }
                     .buttonStyle(.borderless)
                     Text("Created \(current.task.createdAt.formatted(date: .abbreviated, time: .shortened)) · Edited \(current.task.updatedAt.formatted(.relative(presentation: .named)))")
@@ -34,7 +37,28 @@ struct TaskInspector: View {
                 }
                 .padding(16)
             }
+            .onChange(of: store.task(taskId)) { _, _ in
+                // Changed somewhere else (a click in the list, or sync): show it, unless you're mid-edit.
+                if pending == nil { draft = store.draft(for: taskId) }
+            }
+            .onDisappear { saveNow() }
         }
+    }
+
+    func scheduleSave() {
+        pending?.cancel()
+        pending = Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            saveNow()
+        }
+    }
+
+    func saveNow() {
+        pending?.cancel()
+        pending = nil
+        guard let d = draft, store.task(taskId) != nil, d != store.draft(for: taskId) else { return }
+        store.save(d)
     }
 }
 
@@ -103,17 +127,7 @@ struct TaskForm: View {
                 }.pickerStyle(.segmented).labelsHidden()
             }
 
-            group("Organize", "folder") {
-                Picker("Project", selection: Binding(get: { draft.task.projectId ?? 0 }, set: { draft.task.projectId = $0 == 0 ? nil : $0 })) {
-                    Text("None").tag(Int64(0))
-                    ForEach(store.activeProjects) { p in Text(p.name).tag(p.id) }
-                }
-                Picker("List", selection: Binding(get: { draft.task.listId ?? 0 }, set: { draft.task.listId = $0 == 0 ? nil : $0 })) {
-                    Text("None").tag(Int64(0))
-                    ForEach(store.data.lists) { l in Text(l.name).tag(l.id) }
-                }
-                tagsEditor
-            }
+            group("Tags", "number") { tagsEditor }
 
             group("Repeat", "repeat") { RepeatEditor(rule: $draft.task.recurrence) }
 
@@ -166,7 +180,6 @@ struct TaskForm: View {
 
     var tagsEditor: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("Tags")
             FlowRow(spacing: 6) {
                 ForEach(draft.tagNames, id: \.self) { t in
                     HStack(spacing: 3) {
@@ -174,7 +187,7 @@ struct TaskForm: View {
                         Button { draft.tagNames.removeAll { $0 == t } } label: { Image(systemName: "xmark").font(.caption2) }.buttonStyle(.borderless)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+                    .background(RoundedRectangle(cornerRadius: Radius.small).fill(Color.accentColor.opacity(0.14)))
                 }
                 TextField("Add tag", text: $newTag).textFieldStyle(.plain).frame(width: 90).onSubmit {
                     let t = newTag.trimmingCharacters(in: .whitespaces).droppingPrefix("#")
@@ -263,7 +276,7 @@ struct DayField: View {
                     .labelsHidden().datePickerStyle(.field)
                 if allowsTime {
                 Toggle("at", isOn: Binding(get: { time != nil }, set: { time = $0 ? (time ?? TimeOfDay(hour: 9, minute: 0)) : nil }))
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.checkbox).fixedSize()
                 if let t = time {
                     DatePicker("", selection: Binding(get: { Day.today().date(at: t) }, set: { time = TimeOfDay($0) }), displayedComponents: .hourAndMinute)
                         .labelsHidden().datePickerStyle(.field)
@@ -351,70 +364,5 @@ struct RemindersEditor: View {
         case .TASK: return ReminderPlanner.describeOffset(r.offsetMinutes) + " start"
         case .DEADLINE: return ReminderPlanner.describeOffset(r.offsetMinutes) + " due"
         }
-    }
-}
-
-struct ProjectEditor: View {
-    @EnvironmentObject var store: Store
-    @EnvironmentObject var nav: Navigator
-    @Environment(\.dismiss) var dismiss
-    @State var project: Project
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(project.id == 0 ? "New Project" : "Edit Project").font(.title2.weight(.semibold))
-            HStack(spacing: 12) {
-                ColorBadge(color: project.color, symbol: Icons.symbol(project.icon), size: 36)
-                TextField("Name", text: $project.name).textFieldStyle(.roundedBorder).font(.title3)
-            }
-            TextField("Description", text: $project.description, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
-            ColorPickerRow(color: $project.color)
-            IconPickerGrid(icon: $project.icon, color: project.color)
-            DayField(label: "Start", day: $project.startDate, time: .constant(nil), allowsTime: false)
-            DayField(label: "Deadline", day: $project.deadline, time: .constant(nil), allowsTime: false)
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(project.id == 0 ? "Create" : "Save") {
-                    let id = store.save(project)
-                    if id != 0 { if project.id == 0 { nav.go(.project(id)) }; dismiss() }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(project.name.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 440)
-    }
-}
-
-struct ListEditor: View {
-    @EnvironmentObject var store: Store
-    @EnvironmentObject var nav: Navigator
-    @Environment(\.dismiss) var dismiss
-    @State var list: TaskList
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(list.id == 0 ? "New List" : "Edit List").font(.title2.weight(.semibold))
-            TextField("Name", text: $list.name).textFieldStyle(.roundedBorder).font(.title3)
-            ColorPickerRow(color: $list.color)
-            Picker("Project", selection: Binding(get: { list.projectId ?? 0 }, set: { list.projectId = $0 == 0 ? nil : $0 })) {
-                Text("None").tag(Int64(0))
-                ForEach(store.activeProjects) { p in Text(p.name).tag(p.id) }
-            }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(list.id == 0 ? "Create" : "Save") {
-                    let id = store.save(list)
-                    if id != 0 { if list.id == 0 { nav.go(.list(id)) }; dismiss() }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(list.name.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 400)
     }
 }

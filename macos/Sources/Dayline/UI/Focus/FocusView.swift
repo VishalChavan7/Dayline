@@ -5,13 +5,16 @@ import DaylineCore
 struct FocusView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var timer: FocusTimer
+    @Environment(\.scheme) private var scheme
 
-    var phaseColor: Color { timer.state.phase == .FOCUS ? .orange : .teal }
+    var phaseColor: Color { timer.state.phase == .FOCUS ? scheme.tertiary : scheme.primary }
 
     var body: some View {
         let s = timer.state
         ScrollView {
             VStack(spacing: 24) {
+                HStack { ScreenTitle(title: "Focus timer", subtitle: "\(Formats.minutes(store.focusMinutes(on: store.today))) focused today"); Spacer() }
+                    .frame(maxWidth: 820)
                 Picker("Phase", selection: Binding(get: { s.phase }, set: { timer.switchPhase($0) })) {
                     ForEach(FocusPhase.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
@@ -29,8 +32,9 @@ struct FocusView: View {
                     }
                 }
                 .frame(width: 300, height: 300)
-                .padding(26)
-                .glass(200, tint: phaseColor)
+                .padding(24)
+                .background(Circle().fill(scheme.card))
+                .overlay(Circle().strokeBorder(scheme.cardStroke, lineWidth: 1))
 
                 HStack(spacing: 14) {
                     if s.status != .IDLE {
@@ -58,7 +62,7 @@ struct FocusView: View {
 
                 todayStats
             }
-            .padding(30)
+            .padding(.horizontal, 28).padding(.vertical, 22)
             .frame(maxWidth: .infinity)
         }
         .scrollContentBackground(.hidden)
@@ -106,7 +110,7 @@ struct FocusView: View {
                         Text(Formats.minutes(minutes)).font(.title.weight(.bold))
                         Text("of \(Formats.minutes(goal)) goal").foregroundStyle(.secondary)
                     }
-                    ProgressView(value: min(1, Double(minutes) / Double(goal))).tint(.orange)
+                    ProgressBar(value: Double(minutes) / Double(goal), color: scheme.tertiary)
                     ForEach(sessions.prefix(6), id: \.startedAt) { f in
                         HStack {
                             Image(systemName: f.completed ? "checkmark.circle.fill" : "circle.lefthalf.filled").foregroundStyle(f.completed ? StatusColor.success : .secondary)
@@ -124,7 +128,7 @@ struct FocusView: View {
                     Chart {
                         ForEach(week, id: \.self) { d in
                             BarMark(x: .value("Day", d.weekday.short), y: .value("Minutes", store.focusMinutes(on: d)))
-                                .foregroundStyle(d == today ? Color.orange : Color.orange.opacity(0.4)).cornerRadius(4)
+                                .foregroundStyle(d == today ? scheme.tertiary : scheme.tertiary.opacity(0.4)).cornerRadius(4)
                         }
                         RuleMark(y: .value("Goal", goal)).lineStyle(StrokeStyle(lineWidth: 1, dash: [4])).foregroundStyle(.secondary)
                     }

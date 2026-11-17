@@ -37,21 +37,14 @@ final class Services: ObservableObject {
         case .task: nav.newTaskDraft = newTaskDraft()
         case .note: nav.go(.notes); notesUI.newNote()
         case .habit: nav.editingHabit = Habit(id: 0, name: "", color: Palette.itemColors[store.data.habits.count % Palette.itemColors.count], startDate: store.today)
-        case .project: nav.editingProject = Project(id: 0, name: "", color: Palette.itemColors[store.data.projects.count % Palette.itemColors.count])
-        case .list: nav.editingList = TaskList(id: 0, name: "", color: Palette.itemColors[2])
         }
     }
 
-    /// A new task prefilled from where you are (project, list, or today).
+    /// A new task, dated today when you're on Today.
     func newTaskDraft() -> TaskDraft {
         var t = TaskItem(id: 0, title: "")
         t.priority = store.defaultPriority
-        switch nav.destination {
-        case .project(let id): t.projectId = id
-        case .list(let id): t.listId = id; t.projectId = store.list(id)?.projectId
-        case .today, .none: t.dueDate = store.today
-        default: break
-        }
+        if nav.destination == .today || nav.destination == nil { t.dueDate = store.today }
         var reminders: [Reminder] = []
         if t.dueDate != nil, let off = store.defaultReminderOffset { reminders.append(Reminder(id: 0, taskId: 0, type: .DEADLINE, offsetMinutes: off)) }
         return TaskDraft(task: t, reminders: reminders)
@@ -136,6 +129,7 @@ extension View {
     func themed(_ store: Store) -> some View {
         tint(Color(argb: store.accentColor))
             .accentColor(Color(argb: store.accentColor))
+            .environment(\.scheme, Scheme.of(store.accentColor))
             .preferredColorScheme(store.themeMode == "DARK" ? .dark : store.themeMode == "LIGHT" ? .light : nil)
     }
 }
@@ -171,18 +165,15 @@ struct DaylineCommands: Commands {
             Button("New Task") { services.create(.task) }.keyboardShortcut("n")
             Button("New Note") { services.create(.note) }.keyboardShortcut("n", modifiers: [.command, .option])
             Button("New Habit") { services.create(.habit) }.keyboardShortcut("h", modifiers: [.command, .shift])
-            Button("New Project") { services.create(.project) }
-            Button("New List") { services.create(.list) }
         }
         CommandGroup(after: .appInfo) {
             Button("Check for Updates…") { Task { await services.updater.check(userInitiated: true); if services.updater.state == .upToDate { NSSound.beep() } } }
         }
         CommandMenu("Go") {
-            ForEach(Array(Destination.main.enumerated()), id: \.offset) { i, d in
-                Button(d.title) { services.nav.go(d) }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+            ForEach(Array(Destination.ordered.enumerated()), id: \.offset) { i, d in
+                if i < 9 { Button(d.title) { services.nav.go(d) }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)"))) }
+                else { Button(d.title) { services.nav.go(d) } }
             }
-            Divider()
-            Button("Completed") { services.nav.go(.completed) }
         }
         CommandMenu("Focus") {
             Button("Start or Pause Timer") { services.timer.toggle() }.keyboardShortcut("f", modifiers: [.command, .shift])

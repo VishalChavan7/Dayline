@@ -9,6 +9,7 @@ struct SettingsView: View {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
             RemindersSettings().tabItem { Label("Reminders", systemImage: "bell") }
             FocusSettings().tabItem { Label("Focus", systemImage: "timer") }
+            TagsSettings().tabItem { Label("Tags", systemImage: "number") }
             SyncSettings().tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
             DataSettings().tabItem { Label("Backup", systemImage: "externaldrive") }
             AboutSettings().tabItem { Label("About", systemImage: "info.circle") }
@@ -55,10 +56,6 @@ struct GeneralSettings: View {
             }
             Picker("Default priority", selection: settingBinding(store, "default_priority", { $0.defaultPriority }, { .string($0.rawValue) })) {
                 ForEach(Priority.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            Picker("New tasks go to", selection: settingBinding(store, "default_list", { $0.defaultListId ?? 0 }, { $0 == 0 ? nil : .int($0) })) {
-                Text("Inbox").tag(Int64(0))
-                ForEach(store.data.lists) { Text($0.name).tag($0.id) }
             }
             Toggle("Show Dayline in the menu bar", isOn: Binding(get: { UserDefaults.standard.object(forKey: "menuBarExtra") as? Bool ?? true },
                                                                     set: { UserDefaults.standard.set($0, forKey: "menuBarExtra"); store.objectWillChange.send() }))
@@ -236,5 +233,37 @@ struct AboutSettings: View {
             Text("MIT License · Made by Vishal Chavan").font(.caption).foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Rename or delete tags (the phone's Settings → Tags).
+struct TagsSettings: View {
+    @EnvironmentObject var store: Store
+    @State private var renaming: Tag?
+    @State private var newName = ""
+    var body: some View {
+        let counts = Dictionary(grouping: store.data.taskTags, by: \.tagId).mapValues(\.count)
+        Form {
+            if store.data.tags.isEmpty {
+                Text("No tags yet. Add #tags to tasks and they show up here.").foregroundStyle(.secondary)
+            }
+            ForEach(store.data.tags.sorted { $0.name.localizedLowercase < $1.name.localizedLowercase }) { t in
+                HStack {
+                    Text("#" + t.name)
+                    Text("\(counts[t.id] ?? 0) task\((counts[t.id] ?? 0) == 1 ? "" : "s")").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Rename…") { newName = t.name; renaming = t }
+                    Button(role: .destructive) { store.deleteTag(t.id) } label: { Image(systemName: "trash") }.help("Delete tag")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(minHeight: 260)
+        .alert("Rename tag", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Rename") { if let t = renaming { store.renameTag(t.id, newName) }; renaming = nil }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
     }
 }

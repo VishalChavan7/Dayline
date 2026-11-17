@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Download for Android" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white"></a>
-  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.1.0"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
+  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.2.0"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
   <img alt="Offline first" src="https://img.shields.io/badge/offline-first-1757D0">
   <img alt="No ads, no tracking" src="https://img.shields.io/badge/ads%20%26%20tracking-none-555">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
 | | Get it | Needs |
 |---|---|---|
 | **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
-| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.1.0): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
+| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.2.0): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
 
 Both apps update themselves after you install them.
 
@@ -60,7 +60,7 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes
 - **Quick capture** with natural typing: `tomorrow`, `friday`, `!high` and `#tag` are understood as you write.
 - Due and start dates, times, repeats (daily, weekly, monthly, custom), multiple reminders, subtasks, links and attachments.
 - **Dependencies:** a task waiting on another can't be completed or deleted until its blocker is done.
-- Projects, lists and tags, plus Inbox, Upcoming (Tomorrow / This week / Next week) and Completed views.
+- Tags, plus Inbox, Upcoming (Tomorrow / This week / Next week), All tasks and Completed views.
 
 ### 📅 Calendar
 - **Month, week and year** views, with repeating tasks shown ahead of time.
@@ -95,13 +95,13 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes
 
 ## On your Mac
 
-- **Liquid Glass design:** translucent glass panels, rounded Tahoe-style corners and calm illustrated skies that follow the time of day. On macOS 26 Tahoe it uses Apple's own Liquid Glass.
-- **A focused Today dashboard:** your day at a glance, with rings for tasks, habits and focus, a week strip and one-click habit check-ins.
-- **Tasks and calendar:** a clean list with dates on the right, and a week view laid out by the hour where you drag tasks to a new day and time.
-- **Habits:** pick any day, tap a ring to check in, and see streaks and a month calendar for each habit.
-- **Notes:** a notes list beside a distraction-free editor, with labels, checklists and formatting.
+- **Looks like your phone:** the same colours, cards, round checkboxes and sections as Dayline on Android, on calm frosted Mac surfaces.
+- **Today dashboard:** your progress ring, overdue and today's tasks grouped by priority, inbox, deadlines, focus and the week, in the order you choose.
+- **Tasks and calendar:** month, week (laid out by the hour) and year views; drag tasks to a new day and time.
+- **Habits:** tick today with one click, see your streak and this week at a glance, and open a habit for its history.
+- **Notes:** your colour-coded note cards beside a distraction-free editor, with labels, checklists and formatting.
 - **Menu bar:** today's tasks and habits, quick add and the focus timer, without opening the app.
-- **Keyboard first:** ⌘N new task, ⌥⌘N new note, ⇧⌘H new habit, ⌘R refresh, ⌘1–⌘8 to jump between sections, ⇧⌘F to start or pause the focus timer.
+- **Keyboard first:** ⌘N new task, ⌥⌘N new note, ⇧⌘H new habit, ⌘R refresh, ⌘1–⌘9 to jump between sections, ⇧⌘F to start or pause the focus timer.
 
 <p align="center"><img src="docs/gallery-mac.png" alt="Dayline for Mac: calendar, habits, notes and statistics" width="100%"></p>
 
@@ -110,7 +110,7 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes
 1. On your phone, open **Settings → Google sync** and connect your Google account.
 2. On your Mac, connect the **same Google account** when Dayline asks (or later in **Settings → Sync**).
 
-Your tasks, projects, habits, notes, focus history and settings then stay in step. Changes reach the other device within seconds while both apps are open. To check right away, pull down on your phone or click **Refresh** on the Mac. Edits made on both devices are merged item by item, so nothing is lost.
+Your tasks, habits, notes, focus history and settings then stay in step. Changes reach the other device within seconds while both apps are open. To check right away, pull down on your phone or click **Refresh** on the Mac. Edits made on both devices are merged item by item, so nothing is lost.
 
 ## Screenshots
 

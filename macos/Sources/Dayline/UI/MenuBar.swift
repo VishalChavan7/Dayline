@@ -41,7 +41,7 @@ struct MenuBarPanel: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(tasks.prefix(12)) { t in TaskRow(task: t, showProject: true, showDate: t.isOverdue(today)) }
+                        ForEach(tasks.prefix(12)) { t in TaskRow(task: t, showDate: t.isOverdue(today)) }
                     }
                 }
                 .frame(maxHeight: 260)

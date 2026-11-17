@@ -37,7 +37,9 @@ final class SyncService: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 let active = NSApp?.isActive ?? false
-                if active || Date().timeIntervalSince(self.lastSync ?? .distantPast) > 300 { self.syncIfEnabled() }
+                if active || Date().timeIntervalSince(self.lastSync ?? .distantPast) > 300 {
+                    if self.enabled { Task { await self.syncNow(quiet: true) } }
+                }
             }
         }
         RunLoop.main.add(t, forMode: .common)
@@ -97,17 +99,18 @@ final class SyncService: ObservableObject {
         soon = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
-            await self?.syncNow()
+            await self?.syncNow(quiet: true)
         }
     }
 
     func syncIfEnabled() { if enabled { Task { await syncNow() } } }
 
-    func syncNow() async {
+    /// Syncs now. Background checks are `quiet`: no spinner, and the status only changes when something happened.
+    func syncNow(quiet: Bool = false) async {
         guard enabled, !demo, !running else { return }
         running = true
         defer { running = false }
-        status = .syncing
+        if !quiet { status = .syncing }
         do {
             guard let token = try await GoogleAuth.accessToken() else {
                 status = .failed("Sign in again to keep syncing.")
@@ -116,7 +119,7 @@ final class SyncService: ObservableObject {
             let outcome = try await round(Drive(token: token))
             lastSync = Date()
             d.set(lastSync, forKey: "sync.lastAt")
-            status = .done(outcome)
+            if !quiet || outcome != "Up to date" || status == .syncing { status = .done(outcome) }
         } catch let e as SyncError {
             status = .failed(e.message)
         } catch let e as URLError {
@@ -130,8 +133,9 @@ final class SyncService: ObservableObject {
 
     /// One sync: merge this Mac with the cloud copy record by record (see SyncMerge), apply, upload.
     private func round(_ drive: Drive) async throws -> String {
-        let local = BackupCodec.encode(store.data)
-        let localNow = BackupCodec.fingerprint(store.data)
+        // Encoding the whole library takes a moment, so it's done off the main thread.
+        let snapshot = store.data
+        let (local, localNow) = await Task.detached(priority: .utility) { (BackupCodec.encode(snapshot), BackupCodec.fingerprint(snapshot)) }.value
         guard let remote = try await drive.find(Self.fileName) else {
             let created = try await drive.create(Self.fileName, local)
             try? local.write(to: baseURL, options: .atomic)
@@ -143,20 +147,29 @@ final class SyncService: ObservableObject {
         if !localChanged && !remoteChanged { return "Up to date" }
         let base = remoteVersion.isEmpty ? nil : try? Data(contentsOf: baseURL)
         let remoteData = (remoteChanged || base == nil) ? try await drive.download(remote.id) : base!
-        let merged = try SyncMerge.merge(base: base, local: local, remote: remoteData)
-        let mergedCanon = SyncMerge.canonFile(merged)
+        let work = try await Task.detached(priority: .utility) { () throws -> (Data, Bool, Bool, DaylineData?) in
+            let merged = try SyncMerge.merge(base: base, local: local, remote: remoteData)
+            let mergedCanon = SyncMerge.canonFile(merged)
+            let changedLocal = mergedCanon != SyncMerge.canonFile(local)
+            let changedRemote = mergedCanon != SyncMerge.canonFile(remoteData)
+            return (merged, changedLocal, changedRemote, changedLocal ? try BackupCodec.decode(merged) : nil)
+        }.value
+        let merged = work.0
+        // You changed something while this was being merged: leave it for the next round.
+        guard store.data == snapshot else { scheduleSoon(1); return "Up to date" }
         var pulled = false, pushed = false
-        if mergedCanon != SyncMerge.canonFile(local) {
-            store.replaceAll(with: try BackupCodec.decode(merged), keepSafetyCopy: false)
+        if let decoded = work.3 {
+            store.replaceAll(with: decoded, keepSafetyCopy: false)
             pulled = true
         }
         var version = remote.version
-        if mergedCanon != SyncMerge.canonFile(remoteData) {
+        if work.2 {
             version = try await drive.update(remote.id, merged).version
             pushed = true
         }
         try? merged.write(to: baseURL, options: .atomic)
-        localHash = BackupCodec.fingerprint(store.data)
+        let after = store.data
+        localHash = await Task.detached(priority: .utility) { BackupCodec.fingerprint(after) }.value
         remoteVersion = version
         return pulled && pushed ? "Merged changes from your phone" : pulled ? "Updated from your phone" : pushed ? "Synced" : "Up to date"
     }

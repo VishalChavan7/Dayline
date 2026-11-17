@@ -1,19 +1,21 @@
 import SwiftUI
 import DaylineCore
 
+/// Round completion check tinted by priority, like the phone.
 struct CheckCircle: View {
     let done: Bool
     let color: Color
-    var size: CGFloat = 18
+    var size: CGFloat = 20
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).strokeBorder(color, lineWidth: 1.6)
-                .background(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(done ? color : color.opacity(0.08)))
-            if done { Image(systemName: "checkmark").font(.system(size: size * 0.55, weight: .heavy)).foregroundStyle(.white) }
+            Circle().strokeBorder(color, lineWidth: 1.8)
+            if done {
+                Circle().fill(color)
+                Image(systemName: "checkmark").font(.system(size: size * 0.5, weight: .bold)).foregroundStyle(.white)
+            }
         }
         .frame(width: size, height: size)
-        .contentShape(Rectangle())
-        .animation(.snappy(duration: 0.2), value: done)
+        .contentShape(Circle())
     }
 }
 
@@ -21,75 +23,81 @@ struct TaskRow: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
     let task: TaskItem
-    var showProject = true
     var showDate = true
 
-    @State private var hovering = false
-
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             Button { complete() } label: { CheckCircle(done: task.isCompleted, color: task.priority.color) }
                 .buttonStyle(.plain)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                .padding(.top, 1)
                 .help(task.isCompleted ? "Mark as not done" : "Complete")
                 .accessibilityLabel(task.isCompleted ? "Completed" : "Complete \(task.title)")
             VStack(alignment: .leading, spacing: 3) {
                 Text(task.title)
-                    .font(.system(size: 13.5, weight: .medium))
+                    .font(.system(size: 13.5))
                     .strikethrough(task.isCompleted, color: .secondary)
                     .foregroundStyle(task.isCompleted ? .secondary : .primary)
                     .lineLimit(2)
-                meta
+                TaskMeta(task: task, showDate: showDate)
             }
             Spacer(minLength: 6)
-            if showDate, let due = dueText {
-                Text(due).font(.system(size: 12, weight: .medium)).foregroundStyle(dueColor).lineLimit(1)
+            if !task.isCompleted && (task.priority == .HIGH || task.priority == .URGENT) {
+                Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(task.priority.color).padding(.top, 2)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
         .contextMenu { TaskMenu(task: task) }
         .draggable(TaskDragItem(id: task.id)) {
-            Text(task.title).padding(6).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            Text(task.title).padding(6).background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .windowBackgroundColor)))
         }
-    }
-
-    var dueText: String? { Formats(store: store).due(task) }
-    var dueColor: Color {
-        guard let d = task.scheduledDate, !task.isCompleted else { return .secondary }
-        if d < store.today { return StatusColor.overdue }
-        if d == store.today { return .accentColor }
-        return .secondary
     }
 
     func complete() {
         let id = task.id, was = task.isCompleted
-        withAnimation(.snappy) { store.setCompleted(id, !was) }
+        store.setCompleted(id, !was)
         if !was && store.task(id)?.isCompleted == true {
             nav.undo = ("Completed “\(task.title)”", { store.setCompleted(id, false) })
         }
     }
+}
 
-    @ViewBuilder var meta: some View {
+/// Date, repeat, subtasks, reminders, files and tags under a task title (the phone's meta row).
+struct TaskMeta: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
+    let task: TaskItem
+    var showDate = true
+
+    var body: some View {
         let subs = store.subtasks(of: task.id)
         let tags = store.tags(of: task.id)
-        let items: [AnyView] = [
-            task.recurrence != nil ? AnyView(Image(systemName: "repeat").foregroundStyle(.secondary).help(task.recurrence!.describe())) : nil,
-            !store.reminders(of: task.id).isEmpty && !task.isCompleted ? AnyView(Image(systemName: "bell").foregroundStyle(.secondary)) : nil,
-            subs.isEmpty ? nil : AnyView(Label("\(subs.filter(\.isDone).count)/\(subs.count)", systemImage: "checklist").foregroundStyle(.secondary)),
-            showProject ? store.project(task.projectId).map { p in
-                AnyView(HStack(spacing: 4) { Circle().fill(Color(argb: p.color)).frame(width: 7, height: 7); Text(p.name) }.foregroundStyle(.secondary))
-            } : nil,
-            store.list(task.listId).map { l in AnyView(Label(l.name, systemImage: "list.bullet").foregroundStyle(.secondary)) },
-            tags.isEmpty ? nil : AnyView(Text(tags.map { "#" + $0.name }.joined(separator: " ")).foregroundStyle(.tint)),
-            store.blockers(of: task.id).isEmpty || task.isCompleted ? nil : AnyView(Label("Waiting", systemImage: "link").foregroundStyle(.orange)),
-        ].compactMap { $0 }
-        if !items.isEmpty {
-            HStack(spacing: 10) { ForEach(items.indices, id: \.self) { items[$0] } }
-                .font(.caption)
-                .labelStyle(CompactLabel())
-                .lineLimit(1)
+        let blocked = !task.isCompleted && store.isBlocked(task.id)
+        let reminders = task.isCompleted ? 0 : store.reminders(of: task.id).count
+        let files = store.attachmentCount(of: task.id)
+        let f = Formats(store: store)
+        let dateText: String? = {
+            if showDate, let d = task.scheduledDate { return f.date(d) + ((task.dueTime ?? task.startTime).map { " " + f.time($0) } ?? "") }
+            return (task.dueTime ?? task.startTime).map { f.time($0) }
+        }()
+        if dateText != nil || blocked || task.recurrence != nil || !subs.isEmpty || reminders > 0 || files > 0 || !tags.isEmpty {
+            HStack(spacing: 10) {
+                if let dateText {
+                    let overdue = !task.isCompleted && task.isOverdue(store.today)
+                    Label(dateText, systemImage: showDate && task.scheduledDate != nil ? "calendar" : "clock")
+                        .foregroundStyle(overdue ? StatusColor.overdue : .secondary)
+                }
+                if blocked { Label("Blocked", systemImage: "lock.fill").foregroundStyle(StatusColor.overdue) }
+                if let r = task.recurrence { Image(systemName: "repeat").foregroundStyle(.secondary).help(r.describe()) }
+                if !subs.isEmpty { Label("\(subs.filter(\.isDone).count)/\(subs.count)", systemImage: "checklist").foregroundStyle(.secondary) }
+                if reminders > 0 { Image(systemName: "bell.fill").foregroundStyle(.secondary) }
+                if files > 0 { Label("\(files)", systemImage: "paperclip").foregroundStyle(.secondary) }
+                ForEach(tags.prefix(3), id: \.id) { t in Text("#" + t.name).foregroundStyle(scheme.tertiary) }
+                if tags.count > 3 { Text("+\(tags.count - 3)").foregroundStyle(.secondary) }
+            }
+            .font(.system(size: 11.5))
+            .labelStyle(CompactLabel())
+            .lineLimit(1)
         }
     }
 }
@@ -129,13 +137,6 @@ struct TaskMenu: View {
                 }
             }
         }
-        Menu("Move to") {
-            Button("Inbox (no project)") { store.update(task.id) { $0.projectId = nil; $0.listId = nil } }
-            if !store.activeProjects.isEmpty { Divider() }
-            ForEach(store.activeProjects) { p in Button(p.name) { store.update(task.id) { $0.projectId = p.id; $0.listId = nil } } }
-            if !store.data.lists.isEmpty { Divider() }
-            ForEach(store.data.lists) { l in Button(l.name) { store.update(task.id) { $0.listId = l.id; $0.projectId = l.projectId } } }
-        }
         Button("Start Focus Session") { FocusTimer.shared?.start(taskId: task.id); nav.go(.focus) }
         Button("Duplicate") { store.duplicate(task.id) }
         Divider()
@@ -153,25 +154,28 @@ func deleteTask(_ store: Store, _ nav: Navigator, _ id: Int64) {
 /// "Add a task" field with the phone's shortcuts.
 struct QuickAddField: View {
     @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
     var date: Day?
-    var projectId: Int64?
-    var listId: Int64?
     var placeholder = "Add a task — try “tomorrow !high #work”"
     @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "plus.circle.fill").font(.title3).foregroundStyle(.tint)
+            Image(systemName: "plus").font(.system(size: 14, weight: .semibold)).foregroundStyle(scheme.primary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
+                .font(.system(size: 14))
                 .focused($focused)
                 .onSubmit(add)
-            if let hint { Text(hint).font(.caption).foregroundStyle(.secondary).transition(.opacity) }
+            if let hint { Text(hint).font(.caption).foregroundStyle(.secondary) }
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .glass(Radius.inner + 4, tint: focused ? .accentColor : nil)
-        .overlay(RoundedRectangle(cornerRadius: Radius.inner + 4, style: .continuous).strokeBorder(focused ? Color.accentColor.opacity(0.55) : .clear, lineWidth: 1.5))
+        .padding(.horizontal, 14)
+        .frame(height: 48)
+        .surface(Radius.card)
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(focused ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1.5))
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
     }
 
     var hint: String? {
@@ -184,33 +188,38 @@ struct QuickAddField: View {
     func add() {
         let t = text.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return }
-        store.quickAdd(t, date: date, projectId: projectId, listId: listId)
+        store.quickAdd(t, date: date)
         text = ""
     }
 }
 
 /// A titled group of task rows (used by every task screen).
 struct TaskSection: View {
-    let title: String
+    let title: String?
     let tasks: [TaskItem]
-    var color: Color = .secondary
-    var showProject = true
+    var color: Color?
     var showDate = true
     var body: some View {
         if !tasks.isEmpty {
             Section {
-                ForEach(tasks) { t in TaskRow(task: t, showProject: showProject, showDate: showDate).tag(t.id) }
-            } header: {
-                SectionHeader(title: title, count: tasks.count, color: color)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .padding(.top, 6)
+                // The heading is an ordinary row: macOS section headers float with their own background bar.
+                if let title {
+                    SectionHeader(title: title, count: tasks.count, color: color)
+                        .padding(.top, 10)
+                        .selectionDisabled()
+                        .listRowSeparator(.hidden)
+                }
+                ForEach(tasks) { t in
+                    TaskRow(task: t, showDate: showDate).tag(t.id)
+                        .listRowSeparator(.hidden)
+                }
             }
         }
     }
 }
 
-/// Standard task screen: header, quick add, grouped list, details on double-click.
-struct TaskScreen<Header: View, Sections: View>: View {
+/// Standard task screen: title, quick add, grouped list, details on double-click.
+struct TaskScreen<Sections: View>: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
     let title: String
@@ -218,30 +227,31 @@ struct TaskScreen<Header: View, Sections: View>: View {
     var quickAdd: QuickAddField?
     var isEmpty: Bool
     var empty: EmptyState
-    @ViewBuilder var header: Header
     @ViewBuilder var sections: Sections
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
-                if Header.self == EmptyView.self { ScreenTitle(title: title, subtitle: subtitle) } else { header }
+                ScreenTitle(title: title, subtitle: subtitle)
                 if let quickAdd { quickAdd }
             }
-            .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 10)
+            .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 8)
             if isEmpty {
                 empty
             } else {
                 List(selection: $nav.selectedTask) { sections }
                     .listStyle(.inset)
                     .scrollContentBackground(.hidden)
+                    .environment(\.defaultMinListRowHeight, 34)
                     .contextMenu(forSelectionType: Int64.self) { _ in } primaryAction: { ids in
                         if let id = ids.first { nav.open(id) }
                     }
                     .onDeleteCommand { if let id = nav.selectedTask { deleteTask(store, nav, id) } }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 12)
             }
         }
+        .frame(maxWidth: 860, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(title)
-        .navigationSubtitle(subtitle ?? "")
     }
 }
