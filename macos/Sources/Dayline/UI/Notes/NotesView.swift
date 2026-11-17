@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import DaylineCore
 
 /// Which note is open (shared so Search and "New Note" can open one).
@@ -23,17 +24,15 @@ struct NotesView: View {
     var body: some View {
         HStack(spacing: 0) {
             listPane
-                .frame(width: 330)
+                .frame(width: 350)
             Divider()
             Group {
                 if let id = ui.selected {
                     NotePane(noteId: id, presetLabel: label).id(ui.token)
                 } else {
-                    VStack(spacing: 0) {
-                        EmptyState(symbol: "note.text", title: store.data.notes.isEmpty ? "Your notebook is empty" : "Pick a note",
-                                   message: "Write with headings, lists and checklists. Add #labels to keep things tidy — they sync with your phone.")
-                        Button { ui.newNote() } label: { Label("New Note", systemImage: "square.and.pencil") }.buttonStyle(.filled).padding(.bottom, 80)
-                    }
+                    EmptyState(art: .notebook, title: store.noteCount == 0 ? "Your notebook is empty" : "Pick a note",
+                               message: "Write with headings, lists and checklists. Add #labels to keep things tidy — they sync with your phone.",
+                               action: ("New Note", { ui.newNote() }))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -44,6 +43,7 @@ struct NotesView: View {
     var notes: [Note] {
         let q = query.trimmingCharacters(in: .whitespaces)
         return store.data.notes
+            .filter { !store.isJournal($0) }
             .filter { label == nil || store.labels(of: $0).contains(label!) }
             .filter { q.isEmpty || $0.title.localizedCaseInsensitiveContains(q) || NoteCodec.plainText($0.body).localizedCaseInsensitiveContains(q) }
             .sorted { $0.updatedAt > $1.updatedAt }
@@ -55,7 +55,7 @@ struct NotesView: View {
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .bottom) {
-                    ScreenTitle(title: "Notes", subtitle: "\(store.data.notes.count) note\(store.data.notes.count == 1 ? "" : "s")")
+                    ScreenTitle(title: "Notes", subtitle: "\(store.noteCount) note\(store.noteCount == 1 ? "" : "s")")
                     Spacer()
                     IconButton(symbol: "square.and.pencil", help: "New note (⌥⌘N)", size: 30) { ui.newNote() }
                 }
@@ -76,9 +76,9 @@ struct NotesView: View {
                     if !pinned.isEmpty { group("OTHERS") }
                     ForEach(others) { n in row(n) }
                 }
-                if shown.isEmpty { Text(store.data.notes.isEmpty ? "No notes yet." : "No matching notes.").foregroundStyle(.secondary).padding(.top, 20) }
+                if shown.isEmpty { Text(store.noteCount == 0 ? "No notes yet." : "No matching notes.").foregroundStyle(.secondary).padding(.top, 20) }
             }
-            .padding(16)
+            .padding(.leading, Page.h).padding(.trailing, 16).padding(.top, Page.top).padding(.bottom, 16)
         }
     }
 
@@ -92,8 +92,7 @@ struct NotesView: View {
             .contextMenu {
                 Button(n.isPinned ? "Unpin" : "Pin") { store.setPinned(note: n.id, !n.isPinned) }
                 Menu("Colour") {
-                    Button("Default") { var m = n; m.color = 0; store.save(m) }
-                    ForEach(NoteColors.all) { sw in Button(sw.name) { var m = n; m.color = sw.key; store.save(m) } }
+                    NoteColorItems(selected: n.color) { c in var m = n; m.color = c; store.save(m) }
                 }
                 Divider()
                 Button("Delete", role: .destructive) { if ui.selected == n.id { ui.selected = nil }; store.deleteNote(n.id) }
@@ -146,6 +145,9 @@ struct NotePane: View {
     @EnvironmentObject var ui: NotesUI
     let noteId: Int64
     var presetLabel: String?
+    /// Journal entries: dated header, bookmark instead of pin, no colours or labels.
+    var journal = false
+    var promptTitle: String?
     @State private var note = Note(id: 0, title: "")
     @State private var html = ""
     @State private var checklist: [CheckItem] = []
@@ -166,21 +168,28 @@ struct NotePane: View {
                     HStack(spacing: 8) {
                         Text(meta).font(.system(size: 12)).foregroundStyle(.tertiary)
                         Spacer()
-                        Menu {
-                            Button("Default") { note.color = 0; changed() }
-                            ForEach(NoteColors.all) { sw in Button(sw.name) { note.color = sw.key; changed() } }
-                        } label: { Image(systemName: "paintpalette") }.menuStyle(.borderlessButton).fixedSize().help("Colour")
-                        Button { note.isPinned.toggle(); changed() } label: { Image(systemName: note.isPinned ? "pin.fill" : "pin") }.buttonStyle(.borderless).help("Pin")
+                        if !journal {
+                            Menu {
+                                NoteColorItems(selected: note.color) { c in note.color = c; changed() }
+                            } label: { Image(systemName: "paintpalette") }.menuStyle(.borderlessButton).fixedSize().help("Colour")
+                        }
+                        Button { note.isPinned.toggle(); changed() } label: {
+                            Image(systemName: journal ? (note.isPinned ? "bookmark.fill" : "bookmark") : (note.isPinned ? "pin.fill" : "pin"))
+                        }.buttonStyle(.borderless).help(journal ? "Bookmark" : "Pin")
                         Button { checklist.append(CheckItem(text: "")); changed() } label: { Image(systemName: "checkmark.square") }.buttonStyle(.borderless).help("Add a checklist")
                         if note.id != 0 {
-                            Button(role: .destructive) { let id = note.id; ui.selected = nil; store.deleteNote(id) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("Delete note")
+                            Button(role: .destructive) { let id = note.id; ui.selected = nil; store.deleteNote(id) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help(journal ? "Delete entry" : "Delete note")
                         }
+                    }
+                    if journal {
+                        Text(entryDate.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(scheme.primary)
                     }
                     TextField("Title", text: $note.title, axis: .vertical)
                         .font(.system(size: 28, weight: .bold))
                         .textFieldStyle(.plain)
                         .onChange(of: note.title) { _, _ in changed() }
-                    labelRow
+                    if !journal { labelRow }
                     RichTextEditor(html: $html, controller: controller)
                         .frame(minHeight: 360)
                         .onChange(of: html) { _, _ in changed() }
@@ -200,10 +209,12 @@ struct NotePane: View {
                 .surface(Radius.inner)
                 .padding(.bottom, 18)
         }
-        .background(NoteColors.color(note.color)?.opacity(0.35) ?? scheme.card)
+        .background((journal ? nil : NoteColors.color(note.color)?.opacity(0.35)) ?? scheme.card)
         .onAppear(perform: load)
         .onDisappear { save() }
     }
+
+    var entryDate: Date { note.id == 0 ? Date() : note.createdAt }
 
     var meta: String {
         let edited = note.id == 0 ? "New note" : "Edited " + note.updatedAt.formatted(.relative(presentation: .named))
@@ -258,6 +269,7 @@ struct NotePane: View {
         labels = store.labels(of: note)
         countWords()
         if noteId == 0, let presetLabel, presetLabel != "__pinned" { labels = [presetLabel] }
+        if noteId == 0, journal, let promptTitle { note.title = promptTitle }
     }
 
     /// Saves shortly after you stop typing (so sync picks it up), and when you leave.
@@ -287,5 +299,41 @@ struct NotePane: View {
             note = store.note(id) ?? note
             if ui.selected == 0 || ui.selected == noteId { ui.selected = id }
         }
+    }
+}
+
+/// Menu items for note colours, each with a swatch of the colour in front of its name.
+struct NoteColorItems: View {
+    let selected: Int32
+    let apply: (Int32) -> Void
+    var body: some View {
+        Button { apply(0) } label: { Label { Text(selected == 0 ? "Default ✓" : "Default") } icon: { Image(nsImage: Swatch.image(nil)) } }
+        ForEach(NoteColors.all) { sw in
+            Button { apply(sw.key) } label: {
+                Label { Text(selected == sw.key ? "\(sw.name) ✓" : sw.name) } icon: { Image(nsImage: Swatch.image(sw)) }
+            }
+        }
+    }
+}
+
+/// Small round colour swatch for menus (menus need real images; SF Symbols there turn monochrome).
+enum Swatch {
+    @MainActor private static var cache: [Int32: NSImage] = [:]
+    @MainActor static func image(_ sw: NoteColors.Swatch?) -> NSImage {
+        let key = sw?.key ?? 0
+        if let i = cache[key] { return i }
+        let light = sw.map { NSColor(Color(hex: $0.light)) }, dark = sw.map { NSColor(Color(hex: $0.dark)) }
+        let img = NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+            if let fill = isDark ? dark : light { fill.setFill(); circle.fill() }
+            NSColor.secondaryLabelColor.withAlphaComponent(0.5).setStroke()
+            circle.lineWidth = 1
+            circle.stroke()
+            return true
+        }
+        img.isTemplate = false
+        cache[key] = img
+        return img
     }
 }

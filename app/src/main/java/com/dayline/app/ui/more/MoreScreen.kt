@@ -1,5 +1,6 @@
 package com.dayline.app.ui.more
 
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -109,6 +110,9 @@ const val CHECK_UPDATES = "check_updates"
 @Composable
 fun MoreContent(counts: MoreCounts, updateCaption: String? = null, onOpen: (String) -> Unit) {
     val groups = listOf(
+        "Writing" to listOf(
+            MoreEntry("Journal", "Reflect on your day", Icons.Rounded.AutoStories, Routes.JOURNAL) { MaterialTheme.colorScheme.tertiary },
+        ),
         "Tasks" to listOf(
             MoreEntry("Inbox", "${counts.inbox} to sort", Icons.Rounded.Inbox, Routes.INBOX) { MaterialTheme.colorScheme.primary },
             MoreEntry("Upcoming", "${counts.upcoming} scheduled", Icons.Rounded.Upcoming, Routes.UPCOMING) { MaterialTheme.colorScheme.primary },

@@ -3,36 +3,36 @@ import DaylineCore
 
 /// The same places as the phone: the four main tabs, then everything from its More page.
 enum Destination: Hashable, CaseIterable {
-    case today, calendar, notes, habits
+    case today, calendar, notes, journal, habits
     case inbox, upcoming, all, completed
     case focus, stats
 
     var title: String {
         switch self {
-        case .today: "Today"; case .calendar: "Calendar"; case .notes: "Notes"; case .habits: "Habits"
-        case .inbox: "Inbox"; case .upcoming: "Upcoming"; case .all: "All tasks"; case .completed: "Completed"
-        case .focus: "Focus timer"; case .stats: "Statistics"
+        case .today: "Today"; case .calendar: "Calendar"; case .notes: "Notes"; case .journal: "Journal"; case .habits: "Habits"
+        case .inbox: "Inbox"; case .upcoming: "Upcoming"; case .all: "All Tasks"; case .completed: "Completed"
+        case .focus: "Focus Timer"; case .stats: "Statistics"
         }
     }
     var symbol: String {
         switch self {
-        case .today: "sun.max.fill"; case .calendar: "calendar"; case .notes: "note.text"; case .habits: "figure.mind.and.body"
+        case .today: "sun.max.fill"; case .calendar: "calendar"; case .notes: "note.text"; case .journal: "book.closed.fill"; case .habits: "figure.mind.and.body"
         case .inbox: "tray.fill"; case .upcoming: "calendar.badge.clock"; case .all: "checkmark.circle"; case .completed: "checklist.checked"
         case .focus: "timer"; case .stats: "chart.bar.fill"
         }
     }
-    static let main: [Destination] = [.today, .calendar, .notes, .habits]
+    static let main: [Destination] = [.today, .calendar, .notes, .journal, .habits]
     static let tasks: [Destination] = [.inbox, .upcoming, .all, .completed]
     static let productivity: [Destination] = [.focus, .stats]
     static let ordered: [Destination] = main + tasks + productivity
 }
 
 enum CreateKind: String, CaseIterable, Identifiable {
-    case task, note, habit
+    case task, note, journal, habit
     var id: String { rawValue }
-    var label: String { "New " + rawValue.capitalized }
+    var label: String { self == .journal ? "New Journal Entry" : "New " + rawValue.capitalized }
     var symbol: String {
-        switch self { case .task: "checkmark.circle"; case .note: "square.and.pencil"; case .habit: "figure.mind.and.body" }
+        switch self { case .task: "checkmark.circle"; case .note: "square.and.pencil"; case .journal: "book.closed"; case .habit: "figure.mind.and.body" }
     }
 }
 
@@ -49,7 +49,7 @@ final class Navigator: ObservableObject {
 
     /// What "+" makes on the current screen.
     var primaryCreate: CreateKind {
-        switch destination { case .notes: .note; case .habits: .habit; default: .task }
+        switch destination { case .notes: .note; case .journal: .journal; case .habits: .habit; default: .task }
     }
 
     func open(_ id: Int64) { selectedTask = id; showInspector = true }
@@ -111,6 +111,7 @@ struct RootView: View {
             case .today: TodayView()
             case .calendar: CalendarView()
             case .notes: NotesView()
+            case .journal: JournalView(ui: services.journalUI)
             case .habits: HabitsView()
             case .inbox: InboxView()
             case .upcoming: UpcomingView()
@@ -129,6 +130,7 @@ struct Sidebar: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
     @Environment(\.scheme) private var scheme
+    @Environment(\.controlActiveState) private var windowState
 
     var body: some View {
         let counts = badges()
@@ -148,12 +150,22 @@ struct Sidebar: View {
     }
 
     func row(_ d: Destination, _ badge: Int?) -> some View {
-        Label {
+        // The highlight is the accent colour only while the window is in front; otherwise it's a light grey.
+        let selected = nav.destination == d && windowState == .key
+        return HStack(spacing: 11) {
+            if selected {
+                // On the highlighted row the tile turns light so the symbol stays visible.
+                Image(systemName: d.symbol)
+                    .font(.system(size: 24 * 0.48, weight: .semibold))
+                    .foregroundStyle(scheme.onAccent)
+                    .frame(width: 24, height: 24)
+                    .background(RoundedRectangle(cornerRadius: 24 * 0.3, style: .continuous).fill(scheme.onAccent.opacity(0.22)))
+            } else {
+                IconBadge(symbol: d.symbol, color: scheme.primary, size: 24)
+            }
             Text(d.title).font(.system(size: 13.5))
-        } icon: {
-            IconBadge(symbol: d.symbol, color: scheme.primary, size: 26)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 3)
         .badge(badge ?? 0)
         .tag(d)
     }

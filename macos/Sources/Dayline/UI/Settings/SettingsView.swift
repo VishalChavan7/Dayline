@@ -14,7 +14,7 @@ struct SettingsView: View {
             DataSettings().tabItem { Label("Backup", systemImage: "externaldrive") }
             AboutSettings().tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 520)
+        .frame(width: 560)
         .padding(.vertical, 6)
     }
 }
@@ -33,16 +33,9 @@ struct GeneralSettings: View {
             Picker("Appearance", selection: settingBinding(store, "theme_mode", { $0.themeMode }, { .string($0) })) {
                 Text("System").tag("SYSTEM"); Text("Light").tag("LIGHT"); Text("Dark").tag("DARK")
             }
-            LabeledContent("Accent") {
-                HStack(spacing: 8) {
-                    ForEach(Palette.accents.indices, id: \.self) { i in
-                        let c = Palette.accents[i]
-                        Circle().fill(Color(argb: c)).frame(width: 20, height: 20)
-                            .overlay(Circle().strokeBorder(Color.primary, lineWidth: c == store.accentColor ? 2 : 0).padding(-3))
-                            .onTapGesture { store.set("accent_color", .int(Int64(c))) }
-                            .help(Palette.accentNames[i])
-                    }
-                }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Theme colour")
+                ThemePicker(selected: store.accentColor) { store.set("accent_color", .int(Int64($0))) }
             }
             Picker("Week starts on", selection: settingBinding(store, "week_start", { $0.weekStart.rawValue }, { .int(Int64($0)) })) {
                 ForEach(Weekday.allCases, id: \.self) { Text($0.name).tag($0.rawValue) }
@@ -239,31 +232,93 @@ struct AboutSettings: View {
 /// Rename or delete tags (the phone's Settings → Tags).
 struct TagsSettings: View {
     @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
     @State private var renaming: Tag?
+    @State private var deleting: Tag?
     @State private var newName = ""
     var body: some View {
         let counts = Dictionary(grouping: store.data.taskTags, by: \.tagId).mapValues(\.count)
         Form {
             if store.data.tags.isEmpty {
-                Text("No tags yet. Add #tags to tasks and they show up here.").foregroundStyle(.secondary)
+                Text("No tags yet. Add tags to tasks (or type #tag when adding one) to group related work.").foregroundStyle(.secondary)
             }
             ForEach(store.data.tags.sorted { $0.name.localizedLowercase < $1.name.localizedLowercase }) { t in
-                HStack {
-                    Text("#" + t.name)
-                    Text("\(counts[t.id] ?? 0) task\((counts[t.id] ?? 0) == 1 ? "" : "s")").foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Image(systemName: "number").font(.system(size: 14, weight: .semibold)).foregroundStyle(scheme.tertiary)
+                        .frame(width: 28, height: 28)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(scheme.tertiaryContainer))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(t.name)
+                        Text("\(counts[t.id] ?? 0) task\((counts[t.id] ?? 0) == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    Button("Rename…") { newName = t.name; renaming = t }
-                    Button(role: .destructive) { store.deleteTag(t.id) } label: { Image(systemName: "trash") }.help("Delete tag")
+                    Button { newName = t.name; renaming = t } label: { Image(systemName: "pencil") }
+                        .help("Rename \(t.name)").accessibilityLabel("Rename \(t.name)")
+                    Button { deleting = t } label: { Image(systemName: "trash") }
+                        .help("Delete \(t.name)").accessibilityLabel("Delete \(t.name)")
                 }
                 .buttonStyle(.borderless)
+                .padding(.vertical, 2)
             }
         }
         .formStyle(.grouped)
-        .frame(minHeight: 260)
+        .frame(minHeight: 280)
         .alert("Rename tag", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
-            Button("Rename") { if let t = renaming { store.renameTag(t.id, newName) }; renaming = nil }
+            Button("Save") { if let t = renaming { store.renameTag(t.id, newName) }; renaming = nil }
             Button("Cancel", role: .cancel) { renaming = nil }
         }
+        .confirmationDialog("Delete #\(deleting?.name ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Delete Tag", role: .destructive) { if let t = deleting { store.deleteTag(t.id) }; deleting = nil }
+        } message: { Text("It's removed from every task. The tasks stay.") }
+    }
+}
+
+/// The phone's theme choices: solid colours and Mono, then gradients and Dynamic (your Mac's accent colour).
+struct ThemePicker: View {
+    let selected: Int32
+    let select: (Int32) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Colours").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ForEach(Palette.accents.indices, id: \.self) { i in
+                    swatch(Palette.accents[i], Palette.accentNames[i]) { Circle().fill(Color(argb: Palette.accents[i])) }
+                }
+                swatch(ThemeStyles.monochrome, "Mono") {
+                    Circle().fill(AngularGradient(colors: [Color(hex: 0x111111), Color(hex: 0x111111), Color(hex: 0x9E9E9E), Color(hex: 0xF2F2F2), Color(hex: 0x111111)], center: .center))
+                }
+            }
+            Text("Gradients").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ForEach(ThemeStyles.gradients) { g in
+                    swatch(g.id, g.name) { Circle().fill(LinearGradient(colors: [Color(hex: g.start), Color(hex: g.end)], startPoint: .topLeading, endPoint: .bottomTrailing)) }
+                }
+                swatch(ThemeStyles.dynamic, "Dynamic") {
+                    Circle().fill(LinearGradient(colors: [Color(nsColor: .controlAccentColor), Color(nsColor: .controlAccentColor).opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                }
+                .help("Dynamic: follows your Mac's accent colour")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    func swatch<S: View>(_ id: Int32, _ name: String, @ViewBuilder _ fill: () -> S) -> some View {
+        let on = id == selected
+        return VStack(spacing: 3) {
+            ZStack {
+                fill()
+                if on { Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.white).shadow(radius: 1) }
+            }
+            .frame(width: 26, height: 26)
+            .overlay(Circle().strokeBorder(on ? Color.primary : Color.primary.opacity(0.15), lineWidth: on ? 2 : 1).padding(-3))
+            Text(name).font(.system(size: 9.5)).foregroundStyle(.secondary).fixedSize()
+        }
+        .frame(width: 42)
+        .contentShape(Rectangle())
+        .onTapGesture { select(id) }
+        .help(name)
+        .accessibilityLabel("Use \(name)")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }

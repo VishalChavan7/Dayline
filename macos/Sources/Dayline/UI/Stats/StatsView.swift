@@ -4,6 +4,7 @@ import DaylineCore
 
 struct StatsView: View {
     @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
     @State private var period: StatsPeriod = .week
     @State private var anchor = Day.today()
 
@@ -25,9 +26,9 @@ struct StatsView: View {
                     EmptyState(symbol: "chart.bar", title: "No activity yet", message: "Complete tasks, check in habits or run a focus session, and your trends show up here.")
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
-                        tile("Completed", "\(r.completed)", change: r.completedChange, symbol: "checkmark.circle.fill", color: StatusColor.success)
+                        tile("Completed", "\(r.completed)", change: r.completedChange, sub: r.completedChange == nil ? "tasks this \(period.label.lowercased())" : "vs last \(period.label.lowercased())", symbol: "checkmark.circle.fill", color: StatusColor.success)
                         tile("Completion rate", "\(Int((r.completionRate * 100).rounded()))%", sub: "\(r.remaining) still due", symbol: "percent", color: .accentColor)
-                        tile("Focus", Formats.minutes(r.focusMinutes), change: r.focusChange, sub: "\(r.focusSessions) sessions · avg \(r.averageSessionMinutes)m", symbol: "timer", color: .orange)
+                        tile("Focus", Formats.minutes(r.focusMinutes), change: r.focusChange, sub: "\(r.focusSessions) sessions · avg \(r.averageSessionMinutes)m", symbol: "timer", color: scheme.tertiary)
                         tile("Overdue now", "\(r.overdueNow)", sub: "\(r.overdueInPeriod) missed this \(period.label.lowercased())", symbol: "exclamationmark.circle.fill", color: StatusColor.overdue)
                         tile("Habits", "\(Int((r.habitConsistency * 100).rounded()))%", sub: "\(r.habitCheckIns) check-ins", symbol: "flame.fill", color: StatusColor.streak)
                     }
@@ -40,7 +41,7 @@ struct StatsView: View {
                         }
                         chartCard("Focus minutes") {
                             Chart(r.focusSeries, id: \.date) { v in
-                                BarMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Minutes", v.value)).foregroundStyle(Color.orange.gradient).cornerRadius(3)
+                                BarMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Minutes", v.value)).foregroundStyle(scheme.tertiary).cornerRadius(3)
                             }
                         }
                     }
@@ -56,17 +57,33 @@ struct StatsView: View {
                             let items = Priority.allCases.reversed().map { ($0, r.priorityDistribution[$0] ?? 0) }.filter { $0.1 > 0 }
                             if items.isEmpty { Text("No tasks due in this period.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
                             else {
-                                Chart(items, id: \.0) { p, n in
-                                    SectorMark(angle: .value("Tasks", n), innerRadius: .ratio(0.6), angularInset: 1.5)
-                                        .foregroundStyle(p.color).cornerRadius(3)
-                                        .annotation(position: .overlay) { Text("\(n)").font(.caption.weight(.semibold)).foregroundStyle(.white) }
-                                }
-                                .chartLegend(.hidden)
-                                .overlay(alignment: .trailing) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        ForEach(items, id: \.0) { p, n in HStack(spacing: 6) { Circle().fill(p.color).frame(width: 8, height: 8); Text("\(p.label) \(n)").font(.caption) } }
+                                let total = items.reduce(0) { $0 + $1.1 }
+                                HStack(spacing: 28) {
+                                    ZStack {
+                                        Chart(items, id: \.0) { p, n in
+                                            SectorMark(angle: .value("Tasks", n), innerRadius: .ratio(0.62), angularInset: 1.5)
+                                                .foregroundStyle(p.color).cornerRadius(3)
+                                        }
+                                        .chartLegend(.hidden)
+                                        VStack(spacing: 0) {
+                                            Text("\(total)").font(.system(size: 22, weight: .semibold).monospacedDigit())
+                                            Text("tasks").font(.caption).foregroundStyle(.secondary)
+                                        }
                                     }
+                                    .frame(width: 150, height: 150)
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        ForEach(items, id: \.0) { p, n in
+                                            HStack(spacing: 8) {
+                                                Circle().fill(p.color).frame(width: 9, height: 9)
+                                                Text(p.label).font(.callout)
+                                                Spacer(minLength: 12)
+                                                Text("\(n)").font(.callout.weight(.semibold).monospacedDigit())
+                                            }
+                                        }
+                                    }
+                                    .frame(maxWidth: 160)
                                 }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
                         }
                     }
@@ -78,8 +95,7 @@ struct StatsView: View {
                     }
                 }
             }
-            .padding(.horizontal, 28).padding(.vertical, 22)
-            .frame(maxWidth: 1100)
+            .padding(.horizontal, Page.h).padding(.top, Page.top).padding(.bottom, Page.bottom)
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("Statistics")
@@ -102,16 +118,16 @@ struct StatsView: View {
         Card(padding: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(color)
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(value).font(.system(size: 24, weight: .semibold).monospacedDigit())
+                Text(value).font(.system(size: 24, weight: .semibold).monospacedDigit()).padding(.top, 2)
+                Text(title).font(.system(size: 12.5, weight: .medium))
+                HStack(spacing: 6) {
                     if let change {
                         Text("\(change >= 0 ? "▲" : "▼") \(abs(change))%").font(.caption.weight(.semibold))
                             .foregroundStyle(change >= 0 ? StatusColor.success : StatusColor.overdue)
                             .help("Compared with the previous \(period.label.lowercased())")
                     }
+                    Text(sub ?? " ").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-                Text(title).font(.system(size: 12.5, weight: .medium))
-                Text(sub ?? " ").font(.caption).foregroundStyle(.secondary)
             }
         }
     }

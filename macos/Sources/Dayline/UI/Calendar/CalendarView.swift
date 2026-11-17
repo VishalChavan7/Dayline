@@ -11,23 +11,28 @@ struct CalendarView: View {
     @State private var selected = Day.today()
 
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(spacing: 0) {
-                header
-                switch mode {
-                case .month: MonthGrid(anchor: anchor, selected: $selected, entries: entries(for:))
-                case .week: WeekTimeGrid(anchor: anchor, selected: $selected, entries: entries(for:))
-                case .year: YearGrid(year: anchor.year, selected: $selected) { d in selected = d; anchor = d; mode = .month }
+        GeometryReader { geo in
+            let wide = geo.size.width >= 860
+            let layout = wide ? AnyLayout(HStackLayout(spacing: 14)) : AnyLayout(VStackLayout(spacing: 14))
+            layout {
+                VStack(spacing: 0) {
+                    header(compact: geo.size.width < 640)
+                    switch mode {
+                    case .month: MonthGrid(anchor: anchor, selected: $selected, entries: entries(for:))
+                    case .week: WeekTimeGrid(anchor: anchor, selected: $selected, entries: entries(for:))
+                    case .year: YearGrid(year: anchor.year, selected: $selected) { d in selected = d; anchor = d; mode = .month }
+                    }
                 }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-            .surface()
-            .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
-            DayPanel(day: selected, entries: entries(for: selected))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
                 .surface()
-                .frame(minWidth: 280, idealWidth: 320, maxWidth: 360, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                DayPanel(day: selected, entries: entries(for: selected))
+                    .surface()
+                    .frame(width: wide ? min(340, max(280, geo.size.width * 0.3)) : nil, height: wide ? nil : 280)
+                    .frame(maxWidth: wide ? nil : .infinity, maxHeight: wide ? .infinity : nil)
+            }
+            .padding(16)
         }
-        .padding(16)
         .navigationTitle("Calendar")
     }
 
@@ -41,20 +46,24 @@ struct CalendarView: View {
         }
     }
 
-    var header: some View {
-        HStack(spacing: 10) {
+    func header(compact: Bool) -> some View {
+        let layout = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 22, weight: .bold))
                 Text(todaySummary).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary)
             }
-            Spacer()
+            if !compact { Spacer() }
+            HStack(spacing: 10) {
             Segmented(options: CalendarMode.allCases, selection: $mode) { $0.rawValue }
             HStack(spacing: 2) {
                 IconButton(symbol: "chevron.left", help: "Previous") { move(-1) }
                 Button("Today") { anchor = store.today; selected = store.today }.buttonStyle(.tonal)
                 IconButton(symbol: "chevron.right", help: "Next") { move(1) }
             }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
 
@@ -114,6 +123,7 @@ struct EntryChip: View {
 
 struct MonthGrid: View {
     @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
     @EnvironmentObject var nav: Navigator
     let anchor: Day
     @Binding var selected: Day
@@ -153,9 +163,9 @@ struct MonthGrid: View {
             HStack {
                 Text("\(d.dayOfMonth)")
                     .font(.callout.weight(isToday ? .bold : .regular).monospacedDigit())
-                    .foregroundStyle(isToday ? .white : inMonth ? .primary : .secondary)
+                    .foregroundStyle(isToday ? scheme.onAccent : inMonth ? .primary : .secondary)
                     .frame(width: 24, height: 22)
-                    .background(Circle().fill(isToday ? Color.accentColor : .clear))
+                    .background(Circle().fill(isToday ? scheme.accent : .clear))
                 Spacer()
             }
             ForEach(list.prefix(maxChips)) { e in
@@ -183,6 +193,7 @@ struct MonthGrid: View {
 
 struct YearGrid: View {
     @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
     let year: Int
     @Binding var selected: Day
     let open: (Day) -> Void
@@ -206,9 +217,9 @@ struct YearGrid: View {
                                         Text(d.month == m ? "\(d.dayOfMonth)" : "")
                                             .font(.system(size: 10).monospacedDigit())
                                             .frame(width: 22, height: 18)
-                                            .foregroundStyle(d == store.today ? .white : .primary)
+                                            .foregroundStyle(d == store.today ? scheme.onAccent : .primary)
                                             .background(RoundedRectangle(cornerRadius: 4).fill(
-                                                d == store.today ? Color.accentColor : (d.month == m && n > 0 ? Color.accentColor.opacity(min(0.6, 0.15 + Double(n) * 0.12)) : .clear)))
+                                                d == store.today ? scheme.accent : (d.month == m && n > 0 ? Color.accentColor.opacity(min(0.6, 0.15 + Double(n) * 0.12)) : .clear)))
                                             .onTapGesture { if d.month == m { open(d) } }
                                     }
                                 }
@@ -243,27 +254,26 @@ struct DayPanel: View {
                 Text("Nothing on this day.").foregroundStyle(.secondary).padding(.top, 4)
                 Spacer()
             } else {
-                List(selection: $nav.selectedTask) {
+                List {
                     ForEach(entries) { e in
                         Group {
                             if e.projected {
-                                HStack(spacing: 10) {
+                                HStack(spacing: 12) {
                                     Image(systemName: "repeat").foregroundStyle(.secondary).frame(width: 20)
                                     Text(e.task.title).foregroundStyle(.secondary)
                                 }
-                                .padding(.vertical, 5)
+                                .padding(.horizontal, 10).padding(.vertical, 7)
                                 .help("A future repeat of this task")
                             } else {
-                                TaskRow(task: e.task, showDate: false).tag(e.task.id)
+                                TaskRow(task: e.task, showDate: false)
                             }
                         }
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+                        .taskListRow()
                     }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .contextMenu(forSelectionType: Int64.self) { _ in } primaryAction: { ids in if let id = ids.first { nav.open(id) } }
+                .padding(.horizontal, -8)
             }
         }
         .padding(16)
@@ -275,6 +285,7 @@ struct DayPanel: View {
 /// Drag a task onto a day and time to move it there.
 struct WeekTimeGrid: View {
     @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
     @EnvironmentObject var nav: Navigator
     let anchor: Day
     @Binding var selected: Day
@@ -292,9 +303,9 @@ struct WeekTimeGrid: View {
                     VStack(spacing: 2) {
                         Text(d.weekday.short.uppercased()).font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(isToday ? Color.accentColor : .secondary)
                         Text("\(d.dayOfMonth)").font(.system(size: 18, weight: .bold, design: .rounded))
-                            .foregroundStyle(isToday ? .white : .primary)
+                            .foregroundStyle(isToday ? scheme.onAccent : .primary)
                             .frame(width: 32, height: 32)
-                            .background(Circle().fill(isToday ? Color.accentColor : .clear))
+                            .background(Circle().fill(isToday ? scheme.accent : .clear))
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())

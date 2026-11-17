@@ -22,14 +22,20 @@ struct CheckCircle: View {
 struct TaskRow: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
+    @Environment(\.scheme) private var scheme
     let task: TaskItem
     var showDate = true
+    /// Clicking the row opens its details (like tapping a task on the phone).
+    var opensOnClick = true
+    @State private var hover = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        let selected = nav.selectedTask == task.id && nav.showInspector
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Button { complete() } label: { CheckCircle(done: task.isCompleted, color: task.priority.color) }
                 .buttonStyle(.plain)
-                .padding(.top, 1)
+                // Line the circle's middle up with the middle of the title's first line.
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.6 }
                 .help(task.isCompleted ? "Mark as not done" : "Complete")
                 .accessibilityLabel(task.isCompleted ? "Completed" : "Complete \(task.title)")
             VStack(alignment: .leading, spacing: 3) {
@@ -42,11 +48,15 @@ struct TaskRow: View {
             }
             Spacer(minLength: 6)
             if !task.isCompleted && (task.priority == .HIGH || task.priority == .URGENT) {
-                Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(task.priority.color).padding(.top, 2)
+                Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(task.priority.color)
             }
         }
-        .padding(.vertical, 5)
-        .contentShape(Rectangle())
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous)
+            .fill(selected ? scheme.selection : hover ? Color.primary.opacity(0.045) : .clear))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous))
+        .onHover { hover = $0 }
+        .onTapGesture { if opensOnClick { nav.open(task.id) } }
         .contextMenu { TaskMenu(task: task) }
         .draggable(TaskDragItem(id: task.id)) {
             Text(task.title).padding(6).background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .windowBackgroundColor)))
@@ -205,20 +215,27 @@ struct TaskSection: View {
                 // The heading is an ordinary row: macOS section headers float with their own background bar.
                 if let title {
                     SectionHeader(title: title, count: tasks.count, color: color)
-                        .padding(.top, 10)
-                        .selectionDisabled()
-                        .listRowSeparator(.hidden)
+                        .padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 6)
+                        .taskListRow()
                 }
                 ForEach(tasks) { t in
-                    TaskRow(task: t, showDate: showDate).tag(t.id)
-                        .listRowSeparator(.hidden)
+                    TaskRow(task: t, showDate: showDate).taskListRow()
                 }
             }
         }
     }
 }
 
-/// Standard task screen: title, quick add, grouped list, details on double-click.
+extension View {
+    /// A row in a task list: no separators, no system highlight (rows draw their own rounded one).
+    func taskListRow() -> some View {
+        listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
+    }
+}
+
+/// Standard task screen: title, quick add and grouped rows. Click a task for its details.
 struct TaskScreen<Sections: View>: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
@@ -230,28 +247,27 @@ struct TaskScreen<Sections: View>: View {
     @ViewBuilder var sections: Sections
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
-                ScreenTitle(title: title, subtitle: subtitle)
-                if let quickAdd { quickAdd }
+        ZStack {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 14) {
+                    ScreenTitle(title: title, subtitle: subtitle)
+                    if let quickAdd { quickAdd }
+                }
+                .padding(.horizontal, Page.h).padding(.top, Page.top).padding(.bottom, 6)
+                if isEmpty {
+                    Spacer()
+                } else {
+                    List { sections }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .environment(\.defaultMinListRowHeight, 10)
+                        .onDeleteCommand { if let id = nav.selectedTask { deleteTask(store, nav, id) } }
+                        .padding(.horizontal, Page.h - 18)
+                }
             }
-            .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 8)
-            if isEmpty {
-                empty
-            } else {
-                List(selection: $nav.selectedTask) { sections }
-                    .listStyle(.inset)
-                    .scrollContentBackground(.hidden)
-                    .environment(\.defaultMinListRowHeight, 34)
-                    .contextMenu(forSelectionType: Int64.self) { _ in } primaryAction: { ids in
-                        if let id = ids.first { nav.open(id) }
-                    }
-                    .onDeleteCommand { if let id = nav.selectedTask { deleteTask(store, nav, id) } }
-                    .padding(.horizontal, 12)
-            }
+            if isEmpty { empty.padding(.top, 60) }
         }
-        .frame(maxWidth: 860, maxHeight: .infinity, alignment: .topLeading)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle(title)
     }
 }

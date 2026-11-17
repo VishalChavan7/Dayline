@@ -510,7 +510,13 @@ final class Store: ObservableObject {
     }
 
     func labels(of n: Note) -> [String] { (n.category ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
-    var allNoteLabels: [String] { Array(Set(data.notes.flatMap(labels(of:)))).sorted() }
+    var allNoteLabels: [String] { Array(Set(data.notes.filter { !isJournal($0) }.flatMap(labels(of:)))).sorted() }
+
+    /// Journal entries are notes labelled "journal" (the same rule as on the phone).
+    static let journalLabel = "journal"
+    func isJournal(_ n: Note) -> Bool { labels(of: n).contains(Store.journalLabel) }
+    var journalEntries: [Note] { data.notes.filter(isJournal).sorted { $0.createdAt > $1.createdAt } }
+    var noteCount: Int { data.notes.filter { !isJournal($0) }.count }
 
     func renameLabel(_ old: String, _ new: String) {
         let from = old.lowercased().trimmingCharacters(in: .whitespaces), to = new.lowercased().trimmingCharacters(in: .whitespaces)

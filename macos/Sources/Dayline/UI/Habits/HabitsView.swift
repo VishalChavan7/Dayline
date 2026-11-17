@@ -14,10 +14,8 @@ struct HabitsView: View {
         let archived = store.data.habits.filter(\.isArchived)
         Group {
             if all.isEmpty && archived.isEmpty {
-                VStack(spacing: 0) {
-                    EmptyState(symbol: "figure.mind.and.body", title: "Grow a new habit", message: "Track every day, specific days, or a number of times a week. Streaks forgive the days you didn't plan.")
-                    Button { newHabit() } label: { Label("New Habit", systemImage: "plus") }.buttonStyle(.filled).padding(.bottom, 80)
-                }
+                EmptyState(art: .sprout, title: "Grow a new habit", message: "Track every day, specific days, or a number of times a week. Streaks forgive the days you didn't plan.",
+                           action: ("New Habit", { newHabit() }))
             } else {
                 HStack(spacing: 0) {
                     list(all, archived)
@@ -71,9 +69,7 @@ struct HabitsView: View {
                     .padding(.top, 8)
                 }
             }
-            .padding(.horizontal, 28).padding(.vertical, 22)
-            .frame(maxWidth: 760)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Page.h).padding(.top, Page.top).padding(.bottom, Page.bottom)
         }
     }
 }

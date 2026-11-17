@@ -6,12 +6,12 @@
 
 <p align="center">
   <b>Your whole day, in one calm place.</b><br>
-  Tasks, calendar, habits, focus sessions and notes on your Android phone and your Mac, kept in step through your own Google Drive.
+  Tasks, calendar, habits, focus sessions, notes and a journal on your Android phone and your Mac, kept in step through your own Google Drive.
 </p>
 
 <p align="center">
   <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Download for Android" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white"></a>
-  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.2.0"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
+  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.0"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
   <img alt="Offline first" src="https://img.shields.io/badge/offline-first-1757D0">
   <img alt="No ads, no tracking" src="https://img.shields.io/badge/ads%20%26%20tracking-none-555">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -22,6 +22,8 @@
 
 ## Demo
 
+Add a task on your Mac, tick a habit on your phone, write in your journal: everything shows up on the other device within seconds.
+
 https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
 
 ## Download
@@ -29,7 +31,7 @@ https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
 | | Get it | Needs |
 |---|---|---|
 | **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
-| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.2.0): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
+| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.0): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
 
 Both apps update themselves after you install them.
 
@@ -42,7 +44,7 @@ Both apps update themselves after you install them.
 
 ## Why Dayline
 
-Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes app. Dayline puts all five in one place, on your phone and your computer, so planning the day, doing the work and building routines happen together.
+Most people juggle a to-do app, a calendar, a habit tracker, a timer, a notes app and a journal. Dayline puts them all in one place, on your phone and your computer, so planning the day, doing the work and building routines happen together.
 
 - **Students:** track assignments with due dates, plan the exam week on the calendar, and study in focus sessions.
 - **Professionals:** capture tasks in a tap, set priorities and dependencies, and keep meeting notes with checklists next to them.
@@ -82,6 +84,11 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes
 - Rich text: bold, italic, underline, strikethrough, headings and lists.
 - Checklists, `#labels`, colour-coded notes, pinning and search.
 
+### 📔 Journal
+- A quiet place for a few lines a day, kept apart from your notes.
+- A fresh writing prompt every day (shuffle for another), entries grouped by month, and bookmarks for the days you want to keep.
+- Your writing streak, entries this year and words written at a glance.
+
 ### 🔔 Reminders and updates
 - Reminders for tasks, habits and the focus timer, with **Complete** and **Snooze** right from the notification.
 - Both apps check this page for new versions and offer a one-click update.
@@ -99,9 +106,11 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes
 - **Today dashboard:** your progress ring, overdue and today's tasks grouped by priority, inbox, deadlines, focus and the week, in the order you choose.
 - **Tasks and calendar:** month, week (laid out by the hour) and year views; drag tasks to a new day and time.
 - **Habits:** tick today with one click, see your streak and this week at a glance, and open a habit for its history.
-- **Notes:** your colour-coded note cards beside a distraction-free editor, with labels, checklists and formatting.
+- **Notes and journal:** your colour-coded note cards beside a distraction-free editor, with labels, checklists and formatting, and a journal with daily prompts.
+- **Widgets:** Today's tasks, Habits, Daily progress, Next up, Focus timer and Quick add for your desktop and Notification Centre. Tick tasks and habits or start the timer right from the widget.
+- **Every phone theme:** the same accent colours, monochrome, gradient and dynamic themes as on Android.
 - **Menu bar:** today's tasks and habits, quick add and the focus timer, without opening the app.
-- **Keyboard first:** ⌘N new task, ⌥⌘N new note, ⇧⌘H new habit, ⌘R refresh, ⌘1–⌘9 to jump between sections, ⇧⌘F to start or pause the focus timer.
+- **Keyboard first:** ⌘N new task, ⌥⌘N new note, ⇧⌘J new journal entry, ⇧⌘H new habit, ⌘R refresh, ⌘1–⌘9 to jump between sections, ⇧⌘F to start or pause the focus timer.
 
 <p align="center"><img src="docs/gallery-mac.png" alt="Dayline for Mac: calendar, habits, notes and statistics" width="100%"></p>
 
@@ -110,7 +119,7 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes
 1. On your phone, open **Settings → Google sync** and connect your Google account.
 2. On your Mac, connect the **same Google account** when Dayline asks (or later in **Settings → Sync**).
 
-Your tasks, habits, notes, focus history and settings then stay in step. Changes reach the other device within seconds while both apps are open. To check right away, pull down on your phone or click **Refresh** on the Mac. Edits made on both devices are merged item by item, so nothing is lost.
+Your tasks, habits, notes, journal, focus history and settings then stay in step. Changes reach the other device within seconds while both apps are open. To check right away, pull down on your phone or click **Refresh** on the Mac. Edits made on both devices are merged item by item, so nothing is lost.
 
 ## Screenshots
 

@@ -1,6 +1,13 @@
 import SwiftUI
 import AppKit
 
+/// Where every page starts: titles line up across screens.
+enum Page {
+    static let h: CGFloat = 28
+    static let top: CGFloat = 20
+    static let bottom: CGFloat = 28
+}
+
 /// Corner radii: modest, Mac-like corners.
 enum Radius {
     static let card: CGFloat = 12
@@ -47,9 +54,15 @@ struct FilledButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1).fixedSize()
             .padding(.horizontal, 14).frame(minHeight: 30)
-            .foregroundStyle(tonal ? AnyShapeStyle(scheme.onPrimaryContainer) : AnyShapeStyle(.white))
-            .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(tonal ? scheme.primaryContainer : Color.accentColor))
+            .foregroundStyle(tonal ? scheme.onPrimaryContainer : scheme.onAccent)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: Radius.inner, style: .continuous)
+                if tonal { shape.fill(scheme.primaryContainer) }
+                else if let g = scheme.brandStrong { shape.fill(LinearGradient(colors: g, startPoint: .leading, endPoint: .trailing)) }
+                else { shape.fill(scheme.accent) }
+            }
             .opacity(configuration.isPressed ? 0.8 : enabled ? 1 : 0.5)
             .contentShape(Rectangle())
     }
@@ -104,10 +117,10 @@ struct Segmented<T: Hashable>: View {
             ForEach(options, id: \.self) { o in
                 let on = o == selection
                 Button { selection = o } label: {
-                    Text(label(o)).font(.system(size: 12.5, weight: on ? .semibold : .medium))
-                        .foregroundStyle(on ? .white : .primary)
+                    Text(label(o)).font(.system(size: 12.5, weight: on ? .semibold : .medium)).lineLimit(1).fixedSize()
+                        .foregroundStyle(on ? scheme.onAccent : .primary)
                         .padding(.horizontal, 14).frame(height: 26)
-                        .background(RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(on ? Color.accentColor : .clear))
+                        .background(RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(on ? scheme.accent : .clear))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

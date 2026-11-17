@@ -109,7 +109,9 @@ public struct Day: Hashable, Comparable, Codable, Sendable, CustomStringConverti
         return calendar.date(from: c) ?? Date(timeIntervalSince1970: TimeInterval(epochDay * 86400))
     }
 
-    public static func today(calendar: Calendar = .current) -> Day { Day(Date(), calendar: calendar) }
+    /// Pins "today" (only used to record the demo video, so phone and Mac show the same day).
+    public static var fixedToday: Day?
+    public static func today(calendar: Calendar = .current) -> Day { fixedToday ?? Day(Date(), calendar: calendar) }
 }
 
 /// A wall-clock time, stored as seconds since midnight (like LocalTime.toSecondOfDay).

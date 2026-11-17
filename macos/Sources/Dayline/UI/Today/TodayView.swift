@@ -26,9 +26,7 @@ struct TodayView: View {
                     ForEach(order) { s in section(s, model) }
                 }
             }
-            .padding(.horizontal, 28).padding(.vertical, 22)
-            .frame(maxWidth: 1080)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Page.h).padding(.top, Page.top).padding(.bottom, Page.bottom)
         }
         .navigationTitle("Today")
         .toolbar { Button { customizing = true } label: { Label("Customize", systemImage: "slider.horizontal.3") }.help("Choose and order the sections on Today") }
@@ -36,7 +34,7 @@ struct TodayView: View {
     }
 
     var greeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
+        let hour = Day.fixedToday != nil ? 9 : Calendar.current.component(.hour, from: Date())
         let part = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
         let name = store.userName.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? part : "\(part), \(name)"
@@ -85,8 +83,9 @@ struct TodayModel {
         focusMinutes = store.focusMinutes(on: today)
     }
 
-    var planned: Int { todayTasks.count + overdue.count + completedToday.count }
-    var done: Int { completedToday.count }
+    /// Today's progress counts habits due today as well as tasks (as on the phone).
+    var planned: Int { todayTasks.count + overdue.count + completedToday.count + habitsDue }
+    var done: Int { completedToday.count + habitsDone }
     var progress: Double { planned == 0 ? 0 : Double(done) / Double(planned) }
 }
 
@@ -117,7 +116,11 @@ struct ProgressCard: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(scheme.primaryContainer))
+        .background {
+            let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+            if let g = scheme.brandSoft { shape.fill(LinearGradient(colors: g, startPoint: .topLeading, endPoint: .bottomTrailing)) }
+            else { shape.fill(scheme.primaryContainer) }
+        }
     }
 
     var headline: String {
@@ -195,16 +198,13 @@ struct CardTaskRows: View {
     var body: some View {
         ForEach(tasks) { t in
             TaskRow(task: t, showDate: showDate)
-                .padding(.horizontal, 6)
-                .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(nav.selectedTask == t.id && nav.showInspector ? scheme.selection : .clear))
-                .onTapGesture { nav.open(t.id) }
             if showSubtasks && !t.isCompleted {
                 ForEach(store.subtasks(of: t.id).filter { !$0.isDone }.prefix(3), id: \.id) { s in
                     HStack(spacing: 10) {
                         Button { store.setSubtaskDone(s.id, true) } label: { CheckCircle(done: false, color: t.priority.color, size: 15) }.buttonStyle(.plain)
                         Text(s.title).font(.system(size: 12.5)).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    .padding(.leading, 34).padding(.vertical, 3)
+                    .padding(.leading, 42).padding(.vertical, 3)
                 }
             }
         }
@@ -214,7 +214,7 @@ struct CardTaskRows: View {
 struct InlineEmpty: View {
     let text: String
     var body: some View {
-        Text(text).font(.callout).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 8)
+        Text(text).font(.callout).foregroundStyle(.secondary).padding(.horizontal, 10).padding(.vertical, 8)
     }
 }
 
@@ -271,7 +271,7 @@ struct TodayTasksCard: View {
                             Circle().fill(p.color).frame(width: 7, height: 7)
                             Text(p.label.uppercased()).font(.system(size: 11, weight: .semibold)).foregroundStyle(p.color)
                         }
-                        .padding(.leading, 6).padding(.top, 8).padding(.bottom, 2)
+                        .padding(.leading, 10).padding(.top, 8).padding(.bottom, 2)
                         CardTaskRows(tasks: group, showDate: false, showSubtasks: true)
                     }
                 }
@@ -284,7 +284,7 @@ struct TodayTasksCard: View {
                     TextAction(title: showDone ? "Hide completed" : "Completed today (\(model.completedToday.count))", symbol: "checkmark") { showDone.toggle() }
                 }
             }
-            .padding(.top, 6)
+            .padding(.top, 6).padding(.leading, 4)
             if showDone { CardTaskRows(tasks: model.completedToday, showDate: false) }
         }
     }
@@ -349,7 +349,7 @@ struct FocusCard: View {
                     .buttonStyle(.tonal)
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 10)
         }
     }
 }
@@ -405,7 +405,7 @@ struct WeeklyCard: View {
                 .chartYAxis(.hidden)
                 .frame(height: 110)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 10)
         }
     }
 }

@@ -59,7 +59,30 @@ struct HSL {
     }
 }
 
-/// The app's colours, derived from the accent exactly like the phone's colour scheme, with
+/// Theme choices beyond a single colour, stored in the same "accent" setting as on the phone
+/// (values that can't be real colours, so older versions keep working).
+enum ThemeStyles {
+    static let monochrome: Int32 = 0x0000_0101
+    static let dynamic: Int32 = 0x0000_0201
+    struct Gradient: Identifiable { let id: Int32; let name: String; let start: UInt32; let end: UInt32 }
+    static let gradients: [Gradient] = [
+        Gradient(id: 0x0000_0301, name: "Sunset", start: 0xF2545B, end: 0xF7A23B),
+        Gradient(id: 0x0000_0302, name: "Ocean", start: 0x2F6FED, end: 0x2BB6D9),
+        Gradient(id: 0x0000_0303, name: "Aurora", start: 0x7B3FF2, end: 0xE040B5),
+        Gradient(id: 0x0000_0304, name: "Forest", start: 0x1F7A4D, end: 0x8BC34A),
+        Gradient(id: 0x0000_0305, name: "Dusk", start: 0x3D3B8E, end: 0xE0607E),
+    ]
+    static func gradient(_ id: Int32) -> Gradient? { gradients.first { $0.id == id } }
+
+    /// The Mac's own accent colour, standing in for the phone's wallpaper colours.
+    static var systemAccent: Int32 {
+        guard let c = NSColor.controlAccentColor.usingColorSpace(.sRGB) else { return Int32(bitPattern: 0xFF2F7DF6) }
+        let v = (UInt32(0xFF) << 24) | (UInt32(c.redComponent * 255) << 16) | (UInt32(c.greenComponent * 255) << 8) | UInt32(c.blueComponent * 255)
+        return Int32(bitPattern: v)
+    }
+}
+
+/// The app's colours, derived from the theme exactly like the phone's colour scheme, with
 /// calm Mac-style surfaces: a soft tinted window background and solid, lightly frosted cards.
 struct Scheme {
     let primary: Color
@@ -74,14 +97,43 @@ struct Scheme {
     /// Inset fills inside cards: search fields, chips, tiles.
     let well: Color
     let selection: Color
+    /// Filled controls (buttons, today's date) and the text on them.
+    let accent: Color
+    let onAccent: Color
+    /// Gradient themes: vivid ends for strong elements, soft ends for the progress card.
+    var brandStrong: [Color]? = nil
+    var brandSoft: [Color]? = nil
 
     @MainActor private static var cache: [Int32: Scheme] = [:]
 
-    @MainActor static func of(_ seed: Int32) -> Scheme {
-        if let s = cache[seed] { return s }
-        let s = make(seed)
-        cache[seed] = s
+    @MainActor static func of(_ theme: Int32) -> Scheme {
+        let key = theme == ThemeStyles.dynamic ? ThemeStyles.systemAccent ^ 0x7 : theme
+        if let s = cache[key] { return s }
+        let s: Scheme
+        if theme == ThemeStyles.monochrome {
+            s = mono()
+        } else if theme == ThemeStyles.dynamic {
+            s = make(ThemeStyles.systemAccent)
+        } else if let g = ThemeStyles.gradient(theme) {
+            var base = make(Int32(bitPattern: 0xFF00_0000 | g.start))
+            let a = Color(hex: g.start), b = Color(hex: g.end)
+            base.brandStrong = [a, b]
+            base.brandSoft = [Color.dynamic(light: mix(g.start, 0xFFFFFF, 0.78), dark: mix(g.start, 0x000000, 0.55)),
+                              Color.dynamic(light: mix(g.end, 0xFFFFFF, 0.78), dark: mix(g.end, 0x000000, 0.55))]
+            s = base
+        } else if (UInt32(bitPattern: theme) >> 24) == 0 {
+            s = make(Int32(bitPattern: 0xFF2F7DF6)) // unknown style: fall back to blue
+        } else {
+            s = make(theme)
+        }
+        cache[key] = s
         return s
+    }
+
+    private static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> Color {
+        func ch(_ v: UInt32, _ sh: UInt32) -> Double { Double((v >> sh) & 0xFF) / 255 }
+        func m(_ sh: UInt32) -> Double { ch(a, sh) * (1 - t) + ch(b, sh) * t }
+        return Color(.sRGB, red: m(16), green: m(8), blue: m(0), opacity: 1)
     }
 
     static func make(_ seed: Int32) -> Scheme {
@@ -99,7 +151,29 @@ struct Scheme {
             card: .dynamic(light: Color.white.opacity(0.88), dark: t(0, 0.06, 0.155)),
             cardStroke: .dynamic(light: Color.black.opacity(0.07), dark: Color.white.opacity(0.07)),
             well: .dynamic(light: t(0, 0.10, 0.935), dark: t(0, 0.06, 0.205)),
-            selection: .dynamic(light: t(0, s, 0.45).opacity(0.12), dark: t(0, s, 0.74).opacity(0.16))
+            selection: .dynamic(light: t(0, s, 0.45).opacity(0.12), dark: t(0, s, 0.74).opacity(0.16)),
+            accent: Color(argb: seed),
+            onAccent: .white
+        )
+    }
+
+    /// Black, greys and white (the phone's Mono theme).
+    static func mono() -> Scheme {
+        func d(_ l: UInt32, _ dk: UInt32) -> Color { .dynamic(light: Color(hex: l), dark: Color(hex: dk)) }
+        return Scheme(
+            primary: d(0x151515, 0xF2F2F2),
+            primaryContainer: d(0xE4E4E4, 0x3A3A3A),
+            onPrimaryContainer: d(0x151515, 0xF2F2F2),
+            tertiary: d(0x3A3A3A, 0xD6D6D6),
+            tertiaryContainer: d(0xDADADA, 0x444444),
+            onTertiaryContainer: d(0x111111, 0xF0F0F0),
+            background: d(0xF1F1F1, 0x1A1A1A),
+            card: .dynamic(light: Color.white.opacity(0.9), dark: Color(hex: 0x262626)),
+            cardStroke: .dynamic(light: Color.black.opacity(0.08), dark: Color.white.opacity(0.08)),
+            well: d(0xE9E9E9, 0x303030),
+            selection: .dynamic(light: Color.black.opacity(0.08), dark: Color.white.opacity(0.12)),
+            accent: d(0x1C1C1C, 0xE6E6E6),
+            onAccent: d(0xFFFFFF, 0x111111)
         )
     }
 }
@@ -286,20 +360,30 @@ struct SectionHeader: View {
     }
 }
 
+/// Empty page: a friendly outlined drawing, a title and a line of help, centred on the page.
 struct EmptyState: View {
-    let symbol: String
+    var art: ArtKind
     let title: String
     var message: String = ""
-    @Environment(\.scheme) private var scheme
+    var action: (String, () -> Void)?
+
+    init(symbol: String, title: String, message: String = "", action: (String, () -> Void)? = nil) {
+        self.art = ArtKind.forSymbol(symbol); self.title = title; self.message = message; self.action = action
+    }
+    init(art: ArtKind, title: String, message: String = "", action: (String, () -> Void)? = nil) {
+        self.art = art; self.title = title; self.message = message; self.action = action
+    }
+
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 26, weight: .medium)).foregroundStyle(scheme.primary)
-                .frame(width: 60, height: 60)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(scheme.primaryContainer))
-            Text(title).font(.system(size: 16, weight: .semibold))
-            if !message.isEmpty { Text(message).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 320) }
+        VStack(spacing: 14) {
+            EmptyArt(kind: art, size: 170)
+            Text(title).font(.system(size: 18, weight: .semibold))
+            if !message.isEmpty {
+                Text(message).font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 340)
+            }
+            if let action { Button(action.0, action: action.1).buttonStyle(.filled).padding(.top, 4) }
         }
-        .padding(40)
+        .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

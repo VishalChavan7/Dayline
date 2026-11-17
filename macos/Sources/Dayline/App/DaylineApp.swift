@@ -8,10 +8,15 @@ final class Services: ObservableObject {
     let store: Store
     let nav = Navigator()
     let notesUI = NotesUI()
+    let journalUI = NotesUI()
+    let journal = JournalUI()
     let timer: FocusTimer
     let notifier: Notifier
     let sync: SyncService
     let updater = Updater()
+    let widgets: WidgetBridge
+    /// Opens the main window (set once the window has appeared).
+    var openMain: (() -> Void)?
 
     let demo: Bool
 
@@ -21,10 +26,13 @@ final class Services: ObservableObject {
         timer = FocusTimer(store: store, demo: demo)
         notifier = Notifier(store: store, demo: demo)
         sync = SyncService(store: store, demo: demo)
+        widgets = WidgetBridge(store: store, timer: timer, demo: demo)
         store.onChange = { [weak self] in
             self?.notifier.reschedule()
             self?.sync.scheduleSoon()
+            self?.widgets.changed()
         }
+        timer.onStateChange = { [weak self] in self?.widgets.changed() }
         timer.onPhaseFinished = { [weak self] p, next in self?.notifier.focusFinished(p, next: next) }
         notifier.openTask = { [weak self] id in self?.nav.open(id) }
         notifier.openFocus = { [weak self] in self?.nav.go(.focus) }
@@ -36,6 +44,7 @@ final class Services: ObservableObject {
         switch kind {
         case .task: nav.newTaskDraft = newTaskDraft()
         case .note: nav.go(.notes); notesUI.newNote()
+        case .journal: nav.go(.journal); journal.prompt = nil; journalUI.newNote()
         case .habit: nav.editingHabit = Habit(id: 0, name: "", color: Palette.itemColors[store.data.habits.count % Palette.itemColors.count], startDate: store.today)
         }
     }
@@ -52,6 +61,8 @@ final class Services: ObservableObject {
 
     func launched() {
         guard !demo else { return }
+        widgets.applyQueued()
+        widgets.publish()
         notifier.reschedule()
         sync.syncIfEnabled()
         updater.checkSoonIfStale()
@@ -60,6 +71,8 @@ final class Services: ObservableObject {
     func becameActive() {
         guard !demo else { return }
         timer.catchUp()
+        widgets.applyQueued()
+        widgets.changed()
         sync.scheduleSoon(2)
         updater.checkSoonIfStale()
         objectWillChange.send() // refresh "today" after midnight
@@ -68,6 +81,29 @@ final class Services: ObservableObject {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// dayline:// links from the widgets.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Task { @MainActor in urls.forEach { ServicesLocator.shared?.handle($0) } }
+    }
+}
+
+extension Services {
+    /// dayline://new-task, dayline://open/<screen>, dayline://task/<id>
+    func handle(_ url: URL) {
+        guard url.scheme == "dayline" else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue.contains("main") == true }) { w.makeKeyAndOrderFront(nil) } else { openMain?() }
+        let parts = url.pathComponents.filter { $0 != "/" }
+        switch url.host {
+        case "new-task": nav.go(.today); create(.task)
+        case "task": if let id = parts.first.flatMap(Int64.init) { nav.open(id) }
+        case "open":
+            let map: [String: Destination] = ["today": .today, "habits": .habits, "focus": .focus, "calendar": .calendar, "notes": .notes, "journal": .journal]
+            if let d = parts.first.flatMap({ map[$0] }) { nav.go(d) }
+        default: break
+        }
+    }
 }
 
 @main
@@ -78,7 +114,9 @@ struct DaylineApp: App {
 
     init() {
         if let dir = ScreenshotMode.outputDirectory {
-            _services = StateObject(wrappedValue: Services(store: Store(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("dayline-demo.json"), data: DemoData.make()), demo: true))
+            if ScreenshotMode.story { Day.fixedToday = Day(year: 2026, month: 11, day: 12) }
+            _services = StateObject(wrappedValue: Services(store: Store(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("dayline-demo.json"),
+                                                                        data: ScreenshotMode.story ? DemoData.story() : DemoData.make()), demo: true))
             ScreenshotMode.scheduled(dir)
         } else {
             _services = StateObject(wrappedValue: Services(store: Store()))
@@ -127,9 +165,10 @@ struct DaylineApp: App {
 extension View {
     /// Accent and light/dark from the shared settings.
     func themed(_ store: Store) -> some View {
-        tint(Color(argb: store.accentColor))
-            .accentColor(Color(argb: store.accentColor))
-            .environment(\.scheme, Scheme.of(store.accentColor))
+        let scheme = Scheme.of(store.accentColor)
+        return tint(scheme.accent)
+            .accentColor(scheme.accent)
+            .environment(\.scheme, scheme)
             .preferredColorScheme(store.themeMode == "DARK" ? .dark : store.themeMode == "LIGHT" ? .light : nil)
     }
 }
@@ -139,13 +178,17 @@ struct MainWindow: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var updater: Updater
     @Environment(\.scenePhase) var phase
+    @Environment(\.openWindow) var openWindow
     @AppStorage("onboarded") private var onboarded = false
 
     var body: some View {
         RootView()
             .frame(minWidth: 900, minHeight: 600)
             .themed(store)
-            .onAppear { services.launched() }
+            .onAppear {
+                services.openMain = { [openWindow] in openWindow(id: "main") }
+                services.launched()
+            }
             .onChange(of: phase) { _, p in if p == .active { services.becameActive() } }
             .sheet(isPresented: Binding(get: { !onboarded && !services.demo }, set: { if !$0 { onboarded = true } })) { Onboarding() }
             .alert("Dayline \(readyVersion) is ready", isPresented: $updater.showPrompt) {
@@ -164,6 +207,7 @@ struct DaylineCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Task") { services.create(.task) }.keyboardShortcut("n")
             Button("New Note") { services.create(.note) }.keyboardShortcut("n", modifiers: [.command, .option])
+            Button("New Journal Entry") { services.create(.journal) }.keyboardShortcut("j", modifiers: [.command, .shift])
             Button("New Habit") { services.create(.habit) }.keyboardShortcut("h", modifiers: [.command, .shift])
         }
         CommandGroup(after: .appInfo) {

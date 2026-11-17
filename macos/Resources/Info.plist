@@ -16,5 +16,12 @@
     <key>NSHumanReadableCopyright</key><string>© 2026 Vishal Chavan · MIT License</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSSupportsAutomaticTermination</key><false/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>com.dayline.mac</string>
+            <key>CFBundleURLSchemes</key><array><string>dayline</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>

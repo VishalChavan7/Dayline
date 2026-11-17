@@ -13,6 +13,8 @@ final class FocusTimer: ObservableObject {
     private let store: Store
     private var ticker: Timer?
     var onPhaseFinished: ((FocusPhase, FocusTimerState) -> Void)?
+    /// Started, paused, stopped or moved to the next phase (widgets follow along).
+    var onStateChange: (() -> Void)?
     private let key: String
 
     init(store: Store, demo: Bool = false) {
@@ -41,6 +43,7 @@ final class FocusTimer: ObservableObject {
         state = s
         if let raw = try? JSONEncoder().encode(s) { UserDefaults.standard.set(raw, forKey: key) }
         updateTicker()
+        onStateChange?()
     }
 
     private func updateTicker() {

@@ -29,6 +29,7 @@ object Routes {
     const val FOCUS = "focus"
     const val FOCUS_PATTERN = "focus?task={task}"
     const val NOTES = "notes"
+    const val JOURNAL = "journal"
     const val NOTE = "note/{id}?kind={kind}"
     const val SETTINGS = "settings"
     const val DASHBOARD_SETTINGS = "settings/dashboard"

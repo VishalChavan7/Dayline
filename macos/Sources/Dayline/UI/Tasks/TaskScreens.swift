@@ -43,7 +43,7 @@ struct AllTasksView: View {
     var body: some View {
         let today = store.today
         let open = TaskGrouping.sort(store.openTasks, sort)
-        TaskScreen(title: "All tasks", subtitle: countText(open.count), quickAdd: QuickAddField(),
+        TaskScreen(title: "All Tasks", subtitle: countText(open.count), quickAdd: QuickAddField(),
                    isEmpty: open.isEmpty, empty: EmptyState(symbol: "checkmark.circle", title: "No open tasks", message: "Everything's done. Add a task above.")) {
             if sort == .dueDate {
                 TaskSection(title: "Overdue", tasks: open.filter { $0.isOverdue(today) }, color: StatusColor.overdue)
@@ -83,6 +83,7 @@ struct CompletedView: View {
 }
 
 struct SearchView: View {
+    @EnvironmentObject var services: Services
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
     @EnvironmentObject var notesUI: NotesUI
@@ -94,17 +95,21 @@ struct SearchView: View {
             TaskSection(title: "Tasks", tasks: r.tasks)
             if !r.notes.isEmpty {
                 Section {
-                    SectionHeader(title: "Notes", count: r.notes.count).padding(.top, 10).selectionDisabled().listRowSeparator(.hidden)
+                    SectionHeader(title: "Notes", count: r.notes.count).padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 6).taskListRow()
                     ForEach(r.notes) { n in
-                        Button { nav.go(.notes); notesUI.open(n.id) } label: {
+                        Button {
+                            if store.isJournal(n) { nav.go(.journal); services.journalUI.open(n.id) } else { nav.go(.notes); notesUI.open(n.id) }
+                        } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(n.title.isEmpty ? "Untitled note" : n.title).fontWeight(.medium)
                                 Text(NoteCodec.plainText(n.body)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             }
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .listRowSeparator(.hidden)
+                        .taskListRow()
                     }
                 }
             }

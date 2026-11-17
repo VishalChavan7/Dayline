@@ -8,15 +8,17 @@ import DaylineCore
 enum ScreenshotMode {
     static var outputDirectory: URL? {
         let args = CommandLine.arguments
-        guard let i = args.firstIndex(of: "--screenshots"), i + 1 < args.count else { return nil }
+        guard let i = args.firstIndex(where: { $0 == "--screenshots" || $0 == "--story" }), i + 1 < args.count else { return nil }
         return URL(fileURLWithPath: args[i + 1], isDirectory: true)
     }
+    /// `--story`: the frames for the phone + Mac sync video, using the same sample data as the phone's screenshots.
+    static var story: Bool { CommandLine.arguments.contains("--story") }
 
     static func scheduled(_ dir: URL) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.5))
-            await run(dir)
+            if story { await runStory(dir) } else { await run(dir) }
             NSApp.terminate(nil)
         }
     }
@@ -32,7 +34,7 @@ enum ScreenshotMode {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         try? await Task.sleep(for: .seconds(1.5))
-        let shots: [(String, Destination)] = [("today", .today), ("calendar", .calendar), ("notes", .notes), ("habits", .habits), ("inbox", .inbox),
+        let shots: [(String, Destination)] = [("today", .today), ("calendar", .calendar), ("notes", .notes), ("journal", .journal), ("habits", .habits), ("inbox", .inbox),
                                               ("upcoming", .upcoming), ("all", .all), ("focus", .focus), ("stats", .stats)]
         for (mode, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
@@ -53,6 +55,12 @@ enum ScreenshotMode {
             if let id = s.store.data.notes.first?.id { s.notesUI.open(id) }
             try? await Task.sleep(for: .seconds(1.5))
             capture(window, dir.appendingPathComponent("note-\(mode).png"))
+            // Journal entry open
+            s.nav.go(.journal)
+            if let id = s.store.journalEntries.first?.id { s.journalUI.open(id) }
+            try? await Task.sleep(for: .seconds(1.2))
+            capture(window, dir.appendingPathComponent("journal-open-\(mode).png"))
+            s.journalUI.selected = nil
             // Calendar week (time grid)
             UserDefaults.standard.set("Week", forKey: "calendar.mode")
             s.nav.go(.calendar)
@@ -66,6 +74,35 @@ enum ScreenshotMode {
             s.nav.newTaskDraft = nil
             try? await Task.sleep(for: .seconds(0.8))
         }
+    }
+
+    /// Before/after frames: a task added on the Mac, a habit ticked on the phone, a journal entry written on the Mac.
+    static func runStory(_ dir: URL) async {
+        guard let s = services, let window = NSApp.windows.first(where: { $0.identifier?.rawValue.contains("main") == true || $0.title == "Dayline" }) else { return }
+        window.setFrame(NSRect(x: 60, y: 60, width: 1280, height: 820), display: true)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.appearance = NSAppearance(named: .aqua)
+        try? await Task.sleep(for: .seconds(1.5))
+        func shot(_ name: String) async {
+            try? await Task.sleep(for: .seconds(1.2))
+            capture(window, dir.appendingPathComponent("story-\(name).png"))
+        }
+        s.nav.go(.today); await shot("today-before")
+        s.store.quickAdd("Call the bank about the card")
+        await shot("today-after")
+        s.nav.go(.habits); await shot("habits-before")
+        s.store.toggle(4, on: s.store.today)
+        await shot("habits-after")
+        s.nav.go(.today); await shot("today-final")
+        var n = Note(id: 0, title: "What made you smile today?")
+        n.category = "journal"
+        n.body = NoteCodec.encode("<p>Coffee with Sam after the design review. We finally agreed on the landing page, and the walk back in the sun felt like a small holiday.</p>")
+        let id = s.store.save(n)
+        if var saved = s.store.note(id), let day = Day.fixedToday {
+            saved.createdAt = day.date(at: TimeOfDay(hour: 9, minute: 0)); s.store.save(saved)
+        }
+        s.nav.go(.journal); s.journalUI.open(id); await shot("journal")
     }
 
     static func capture(_ window: NSWindow, _ url: URL) {
@@ -145,7 +182,17 @@ enum DemoData {
         var n3 = Note(id: 3, title: "Weekend"); n3.color = 4
         n3.body = "<p>Farmers market Saturday morning, then the coastal trail if the weather holds.</p>"; n3.updatedAt = now.addingTimeInterval(-86400 * 2)
         var n4 = Note(id: 4, title: ""); n4.body = "<p>Gift idea for mum: a good pair of gardening gloves #home</p>"; n4.category = "home"; n4.updatedAt = now.addingTimeInterval(-86400 * 5)
-        d.notes = [n1, n2, n3, n4]
+        func entry(_ id: Int64, _ title: String, _ text: String, daysAgo: Int, bookmarked: Bool = false) -> Note {
+            var n = Note(id: id, title: title); n.category = "journal"; n.isPinned = bookmarked
+            n.body = NoteCodec.encode("<p>\(text)</p>")
+            n.createdAt = now.addingTimeInterval(Double(-daysAgo * 86400 - 1800)); n.updatedAt = n.createdAt
+            return n
+        }
+        d.notes = [n1, n2, n3, n4,
+                   entry(10, "What made you smile today?", "Coffee with Sam after the design review. We finally agreed on the homepage, and the walk back in the sun felt like a small holiday.", daysAgo: 0, bookmarked: true),
+                   entry(11, "A quiet Sunday", "Slept in, cleaned the balcony and potted the basil. Read forty pages of Piranesi. No screens until lunch — I want more days like this.", daysAgo: 2),
+                   entry(12, "Describe a small win from this week.", "Shipped the analytics setup two days early. The team noticed, and I noticed that I wasn't stressed about it.", daysAgo: 3),
+                   entry(13, "Trail run", "First run on the coastal trail since summer. Legs were heavy but the view at the lighthouse made up for it.", daysAgo: 9)]
         for back in 0..<20 {
             let minutes = [50, 25, 75, 0, 100, 25, 50][back % 7]
             guard minutes > 0 else { continue }
@@ -153,6 +200,79 @@ enum DemoData {
             d.focusSessions.append(FocusSession(startedAt: start, endedAt: start.addingTimeInterval(Double(minutes * 60)), focusedMillis: Int64(minutes * 60_000),
                                                 plannedMillis: Int64(minutes * 60_000), taskId: 1, projectId: nil, completed: true))
         }
+        d.settings = ["user_name": .string("Vishal"), "accent_color": .int(Int64(Int32(bitPattern: 0xFF2F7DF6)))]
+        return d
+    }
+}
+
+extension DemoData {
+    /// The same tasks, habits and notes as the phone's screenshot fixtures (Thursday 12 November 2026).
+    static func story() -> DaylineData {
+        var d = DaylineData()
+        let today = Day(year: 2026, month: 11, day: 12)
+        let base = today.date(at: TimeOfDay(hour: 9, minute: 0))
+        func at(_ day: Day, _ h: Int = 9) -> Date { day.date(at: TimeOfDay(hour: h, minute: 0)) }
+        func t(_ id: Int64, _ title: String, due: Day?, _ p: Priority, time: TimeOfDay? = nil, done: Bool = false, doneAt: Date? = nil) -> TaskItem {
+            var x = TaskItem(id: id, title: title)
+            x.dueDate = due; x.priority = p; x.dueTime = time; x.isCompleted = done; x.completedAt = doneAt
+            x.createdAt = base.addingTimeInterval(-86400 * 20); x.updatedAt = x.createdAt; x.sortOrder = id
+            return x
+        }
+        d.tasks = [
+            t(1, "Send the Q4 budget to finance", due: today.minusDays(1), .URGENT),
+            t(2, "Review landing page copy with the design team", due: today, .HIGH, time: TimeOfDay(hour: 11, minute: 30)),
+            t(3, "Book dentist appointment", due: today, .MEDIUM),
+            t(4, "Water the plants", due: today, .LOW),
+            t(5, "Morning run", due: today, .MEDIUM, done: true, doneAt: at(today, 7)),
+            t(6, "Prepare sprint demo", due: today.plusDays(1), .HIGH, time: TimeOfDay(hour: 15, minute: 0)),
+            t(7, "Renew car insurance", due: today.plusDays(4), .URGENT),
+            t(8, "Plan weekend hike", due: today.plusDays(9), .LOW),
+            t(9, "Publish release notes", due: today.plusDays(2), .MEDIUM),
+            t(10, "Read 'Deep Work' chapter 3", due: nil, .LOW),
+        ] + (1...12).map { i in
+            // Like the phone's story state: only "Morning run" was finished today.
+            let day = today.minusDays(i % 6 == 0 ? 6 : i % 6)
+            return t(Int64(100 + i), "Done task \(i)", due: day, Priority.allCases[i % 4], done: true, doneAt: at(day))
+        }
+        d.tasks[3].recurrence = RecurrenceRule(frequency: .DAILY)
+        d.subtasks = [Subtask(id: 21, taskId: 2, title: "Hero headline"), Subtask(id: 22, taskId: 2, title: "Pricing section", position: 1),
+                      Subtask(id: 23, taskId: 2, title: "Tone of voice", isDone: true, position: 2)]
+        d.tags = [Tag(id: 1, name: "work"), Tag(id: 2, name: "errands")]
+        d.taskTags = [TaskTag(taskId: 1, tagId: 1), TaskTag(taskId: 3, tagId: 2)]
+        d.reminders = [Reminder(id: 1, taskId: 3, type: .DEADLINE, offsetMinutes: 30)]
+        d.dependencies = [TaskDependency(taskId: 9, dependsOnTaskId: 6)]
+        func c(_ hex: UInt32) -> Int32 { Int32(bitPattern: hex) }
+        var h1 = Habit(id: 1, name: "Meditate", color: c(0xFF8E4EC6), startDate: today.minusDays(40)); h1.icon = "meditate"
+        var h2 = Habit(id: 2, name: "Drink water", color: c(0xFF00A2C7), startDate: today.minusDays(20)); h2.icon = "water"; h2.targetPerDay = 8
+        var h3 = Habit(id: 3, name: "Strength training", color: c(0xFFE0892B), startDate: today.minusDays(60)); h3.icon = "fitness"; h3.frequency = .WEEKLY_TARGET; h3.timesPerWeek = 3
+        var h4 = Habit(id: 4, name: "Journal", color: c(0xFF3E9B4F), startDate: today.minusDays(30)); h4.icon = "book"; h4.frequency = .SPECIFIC_DAYS
+        h4.weekdays = [.monday, .wednesday, .thursday, .friday]
+        d.habits = [h1, h2, h3, h4]
+        for back in 0...12 {
+            let day = today.minusDays(back)
+            if back != 3 { d.habitCompletions.append(HabitCompletion(habitId: 1, date: day, count: 1)) }
+            d.habitCompletions.append(HabitCompletion(habitId: 2, date: day, count: back == 0 ? 5 : 8))
+            if back % 2 == 1 { d.habitCompletions.append(HabitCompletion(habitId: 3, date: day, count: 1)) }
+            if (1...2).contains(back) { d.habitCompletions.append(HabitCompletion(habitId: 4, date: day, count: 1)) }
+        }
+        for back in 0...6 {
+            let start = at(today.minusDays(back), 10)
+            let m = 25 + back * 7
+            d.focusSessions.append(FocusSession(startedAt: start, endedAt: start.addingTimeInterval(3600), focusedMillis: Int64(m * 60_000),
+                                                plannedMillis: 25 * 60_000, taskId: nil, projectId: nil, completed: true))
+        }
+        func journal(_ id: Int64, _ title: String, _ text: String, _ daysAgo: Int) -> Note {
+            var n = Note(id: id, title: title); n.category = "journal"
+            n.body = NoteCodec.encode("<p>\(text)</p>")
+            n.createdAt = at(today.minusDays(daysAgo), 21); n.updatedAt = n.createdAt
+            return n
+        }
+        var n1 = Note(id: 1, title: "Launch checklist"); n1.isPinned = true; n1.color = 3; n1.category = "work"
+        n1.body = NoteCodec.encode("<p>Before we flip the switch:</p>", checklist: [CheckItem(text: "DNS cut-over", done: true), CheckItem(text: "Analytics events"), CheckItem(text: "Redirect map")])
+        n1.updatedAt = base
+        d.notes = [n1,
+                   journal(30, "A quiet Sunday", "Slept in, cleaned the balcony and potted the basil. Read forty pages and kept the phone away until lunch.", 4),
+                   journal(31, "Describe a small win from this week.", "Shipped the analytics setup two days early. The team noticed, and I noticed I wasn't stressed about it.", 6)]
         d.settings = ["user_name": .string("Vishal"), "accent_color": .int(Int64(Int32(bitPattern: 0xFF2F7DF6)))]
         return d
     }

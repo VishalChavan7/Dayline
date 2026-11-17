@@ -9,3 +9,13 @@ PID=$!
 ( sleep 150; kill $PID 2>/dev/null ) &
 wait $PID
 ls "$OUT"
+
+# Frames for the README's sync video (same sample data and day as the phone's screenshots).
+STORY="$(cd .. && pwd)/outputs/story-frames"
+rm -rf "$STORY" && mkdir -p "$STORY"
+build/Dayline.app/Contents/MacOS/Dayline --story "$STORY" &
+PID=$!
+( sleep 90; kill $PID 2>/dev/null ) &
+wait $PID
+ls "$STORY"
+

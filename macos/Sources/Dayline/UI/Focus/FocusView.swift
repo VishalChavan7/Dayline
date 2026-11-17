@@ -13,13 +13,10 @@ struct FocusView: View {
         let s = timer.state
         ScrollView {
             VStack(spacing: 24) {
-                HStack { ScreenTitle(title: "Focus timer", subtitle: "\(Formats.minutes(store.focusMinutes(on: store.today))) focused today"); Spacer() }
-                    .frame(maxWidth: 820)
-                Picker("Phase", selection: Binding(get: { s.phase }, set: { timer.switchPhase($0) })) {
-                    ForEach(FocusPhase.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 360)
-                .disabled(s.status != .IDLE)
+                ScreenTitle(title: "Focus Timer", subtitle: "\(Formats.minutes(store.focusMinutes(on: store.today))) focused today")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Segmented(options: FocusPhase.allCases, selection: Binding(get: { s.phase }, set: { timer.switchPhase($0) })) { $0.label }
+                    .disabled(s.status != .IDLE)
 
                 ZStack {
                     Ring(progress: timer.progress, lineWidth: 18, color: phaseColor)
@@ -62,11 +59,11 @@ struct FocusView: View {
 
                 todayStats
             }
-            .padding(.horizontal, 28).padding(.vertical, 22)
+            .padding(.horizontal, Page.h).padding(.top, Page.top).padding(.bottom, Page.bottom)
             .frame(maxWidth: .infinity)
         }
         .scrollContentBackground(.hidden)
-        .navigationTitle("Focus")
+        .navigationTitle("Focus Timer")
     }
 
     var cycleDots: some View {
@@ -136,6 +133,5 @@ struct FocusView: View {
                 }
             }
         }
-        .frame(maxWidth: 820)
     }
 }

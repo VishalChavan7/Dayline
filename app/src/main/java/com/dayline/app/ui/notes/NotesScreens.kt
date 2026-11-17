@@ -1,5 +1,6 @@
 package com.dayline.app.ui.notes
 
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -233,6 +234,10 @@ data class NotesUiState(
 /** Labels stored on a note (comma-separated in [Note.category]). */
 fun Note.labels(): List<String> = category.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
+/** Journal entries are notes with this label; they live in Journal, not in Notes. Same rule on the Mac. */
+const val JOURNAL_LABEL = "journal"
+fun Note.isJournal(): Boolean = JOURNAL_LABEL in labels()
+
 /** Label → icon key, chosen by the user; read wherever label chips are drawn. */
 val LocalLabelIcons = androidx.compose.runtime.compositionLocalOf { emptyMap<String, String>() }
 
@@ -250,7 +255,8 @@ class NotesViewModel @Inject constructor(
     private val query = MutableStateFlow("")
     private val category = MutableStateFlow<String?>(null)
     private val grid = MutableStateFlow(true)
-    val state: StateFlow<NotesUiState> = combine(repo.notes, query, category, grid, settings.labelIcons) { notes, q, c, g, icons ->
+    val state: StateFlow<NotesUiState> = combine(repo.notes, query, category, grid, settings.labelIcons) { all, q, c, g, icons ->
+        val notes = all.filter { !it.isJournal() }
         val filtered = notes.filter { n ->
             (c == null || c in n.labels()) &&
                 (q.isBlank() || n.title.contains(q, true) || NoteCodec.plainText(n.body).contains(q, true) || (n.category?.contains(q, true) == true))
@@ -284,6 +290,7 @@ data class NotesActions(
     val onToggleGrid: () -> Unit = {},
     val onMenu: (Note) -> Unit = {},
     val onEditLabel: (String) -> Unit = {},
+    val onJournal: () -> Unit = {},
 )
 
 @Composable
@@ -304,6 +311,7 @@ fun NotesScreen(nav: AppNavigator, vm: NotesViewModel = hiltViewModel()) {
             onToggleGrid = vm::toggleGrid,
             onMenu = { menuFor = it },
             onEditLabel = { iconFor = it },
+            onJournal = { nav.to(com.dayline.app.ui.navigation.Routes.JOURNAL) },
         ),
     )
     iconFor?.let { label -> LabelIconSheet(label, onDismiss = { iconFor = null }, onRename = { vm.renameLabel(label, it) }) { vm.setLabelIcon(label, it) } }
@@ -337,6 +345,7 @@ fun NotesContent(state: NotesUiState, actions: NotesActions) {
                 title = { Text("Notes") },
                 subtitle = { if (!state.loading) Text("${state.total} note${if (state.total == 1) "" else "s"}") },
                 actions = {
+                    LabeledIconButton(Icons.Rounded.AutoStories, "Journal", actions.onJournal)
                     LabeledIconButton(
                         if (state.grid) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
                         if (state.grid) "List view" else "Grid view",
@@ -721,7 +730,11 @@ class NoteEditorViewModel @Inject constructor(
             val body = NoteCodec.decode(n?.body.orEmpty())
             _state.value = NoteEditorState(
                 loading = false,
-                note = n ?: Note(title = ""),
+                note = n ?: Note(
+                    title = if (kind.startsWith("journal-")) kind.removePrefix("journal-").toIntOrNull()
+                        ?.let { com.dayline.app.ui.journal.JournalPrompts.all.getOrNull(it) }.orEmpty() else "",
+                    category = if (kind.startsWith("journal")) JOURNAL_LABEL else null,
+                ),
                 html = body.html,
                 checklist = body.checklist.map { EditCheck(nextKey++, it.text, it.done) }.ifEmpty {
                     if (n == null && kind == "list") listOf(EditCheck(nextKey++, "", false)) else emptyList()
@@ -932,6 +945,7 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
             "drawing" -> drawing = ""
             "audio" -> recording = true
             "text" -> { kotlinx.coroutines.delay(420); body.focusEnd() }
+            else -> if (state.startKind.startsWith("journal")) { kotlinx.coroutines.delay(420); body.focusEnd() }
         }
         actions.onStartKindHandled()
     }

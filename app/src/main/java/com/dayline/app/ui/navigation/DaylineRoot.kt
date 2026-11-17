@@ -422,6 +422,7 @@ private fun AppNavHost(navigator: AppNavigator, navController: androidx.navigati
         composable(Routes.STATS) { Page { StatsScreen(navigator) } }
         composable(Routes.FOCUS_PATTERN, listOf(navArgument("task") { type = NavType.LongType; defaultValue = -1L })) { Page { FocusScreen(navigator) } }
         composable(Routes.NOTES) { Page { NotesScreen(navigator) } }
+        composable(Routes.JOURNAL) { Page { com.dayline.app.ui.journal.JournalScreen(navigator) } }
         composable(Routes.NOTE, idArg + navArgument("kind") { type = NavType.StringType; defaultValue = "" }) { Page { NoteEditorScreen(navigator) } }
         composable(Routes.SETTINGS) { Page { SettingsScreen(navigator) } }
         composable(Routes.DASHBOARD_SETTINGS) { Page { DashboardSettingsScreen(navigator) } }
