@@ -30,6 +30,17 @@ https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
 
 Get the latest APK from **[Releases](https://github.com/VishalChavan7/Dayline/releases/latest)**, open it on your phone and allow installing from your browser or file manager when Android asks. Dayline runs on Android 8.0 and newer. From version 1.1.0 on, Dayline updates itself from here.
 
+## Dayline for Mac
+
+A native Mac version, built with SwiftUI for Apple silicon (macOS 14 Sonoma or newer). It has the same Today view, tasks, calendar (month, week and year, with drag-to-reschedule), habits, focus timer, notes and statistics. It adds a menu bar item for today's tasks, quick add and the focus timer, and it syncs with your phone through the same private file in your Google Drive.
+
+<p align="center">
+  <img src="docs/mac-today.png" alt="Dayline for Mac: Today" width="49%">
+  <img src="docs/mac-calendar-dark.png" alt="Dayline for Mac: Calendar in dark mode" width="49%">
+</p>
+
+**Install:** download `Dayline-mac-<version>.zip` from the [Mac release](https://github.com/VishalChavan7/Dayline/releases?q=mac&expanded=true), unzip it and drag **Dayline** into Applications. The app isn't notarized by Apple yet, so the first time macOS says it can't verify it: open **System Settings → Privacy & Security** and click **Open Anyway**. After that, Dayline for Mac updates itself. To build it yourself, see [macos/README.md](macos/README.md).
+
 ## Why Dayline
 
 Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes app. Dayline puts all five on one screen-friendly home, so planning the day, doing the work and building routines happen in the same place.
