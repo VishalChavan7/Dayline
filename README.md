@@ -1,21 +1,19 @@
 <p align="center">
-  <img src="docs/hero.png" alt="Dayline: tasks, calendar, habits, focus and notes for Android" width="100%">
+  <img src="docs/hero.png" alt="Dayline on an Android phone and a Mac" width="100%">
 </p>
 
 <h1 align="center">Dayline</h1>
 
 <p align="center">
   <b>Your whole day, in one calm place.</b><br>
-  Tasks, calendar, habits, focus sessions and notes in one native Android app, built with Material 3 Expressive.
+  Tasks, calendar, habits, focus sessions and notes on your Android phone and your Mac, kept in step through your own Google Drive.
 </p>
 
 <p align="center">
-  <img alt="Android 8.0+" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white">
-  <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.3-7F52FF?logo=kotlin&logoColor=white">
-  <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203%20Expressive-4285F4?logo=jetpackcompose&logoColor=white">
+  <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Download for Android" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white"></a>
+  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.0.0"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
   <img alt="Offline first" src="https://img.shields.io/badge/offline-first-1757D0">
   <img alt="No ads, no tracking" src="https://img.shields.io/badge/ads%20%26%20tracking-none-555">
-  <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/VishalChavan7/Dayline?label=download&color=1757D0"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
   <a href="CONTRIBUTING.md"><img alt="Contributions welcome" src="https://img.shields.io/badge/contributions-welcome-brightgreen"></a>
 </p>
@@ -28,79 +26,87 @@ https://github.com/user-attachments/assets/e3f5f510-7ffb-4237-b1e9-05389b6c7303
 
 ## Download
 
-Get the latest APK from **[Releases](https://github.com/VishalChavan7/Dayline/releases/latest)**, open it on your phone and allow installing from your browser or file manager when Android asks. Dayline runs on Android 8.0 and newer. From version 1.1.0 on, Dayline updates itself from here.
+| | Get it | Needs |
+|---|---|---|
+| 📱 **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
+| 💻 **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.0.0): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
 
-## Dayline for Mac
+Both apps update themselves after you install them.
 
-A native Mac version, built with SwiftUI for Apple silicon (macOS 14 Sonoma or newer). It has the same Today view, tasks, calendar (month, week and year, with drag-to-reschedule), habits, focus timer, notes and statistics. It adds a menu bar item for today's tasks, quick add and the focus timer, and it syncs with your phone through the same private file in your Google Drive.
+<details>
+<summary>First time opening the apps</summary>
 
-<p align="center">
-  <img src="docs/mac-today.png" alt="Dayline for Mac: Today" width="49%">
-  <img src="docs/mac-calendar-dark.png" alt="Dayline for Mac: Calendar in dark mode" width="49%">
-</p>
-
-**Install:** download `Dayline-mac-<version>.zip` from the [Mac release](https://github.com/VishalChavan7/Dayline/releases?q=mac&expanded=true), unzip it and drag **Dayline** into Applications. The app isn't notarized by Apple yet, so the first time macOS says it can't verify it: open **System Settings → Privacy & Security** and click **Open Anyway**. After that, Dayline for Mac updates itself. To build it yourself, see [macos/README.md](macos/README.md).
+- **Android:** allow installing from your browser or file manager when Android asks. If Play Protect says it hasn't seen the app before, tap **Scan app** and then **Install**.
+- **Mac:** Dayline isn't notarized by Apple yet, so the first time macOS says it can't verify the app. Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. You only need to do this once.
+</details>
 
 ## Why Dayline
 
-Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes app. Dayline puts all five on one screen-friendly home, so planning the day, doing the work and building routines happen in the same place.
+Most people juggle a to-do app, a calendar, a habit tracker, a timer and a notes app. Dayline puts all five in one place, on your phone and your computer, so planning the day, doing the work and building routines happen together.
 
 - **Students:** track assignments with due dates, plan the exam week on the calendar, and study in focus sessions.
 - **Professionals:** capture tasks in a tap, set priorities and dependencies, and keep meeting notes with checklists next to them.
-- **Habit builders:** check in daily, count reps or glasses of water, and watch streaks grow on the home screen.
+- **Habit builders:** check in daily, count reps or glasses of water, and watch your streaks grow.
 - **Anyone who wants calm:** one clear Today view instead of five apps, and no account, ads or tracking.
 
 ## Features
 
 ### ☀️ Today
 - A daily dashboard with a progress ring for tasks **and** habits, focus time and overdue count.
-- Overdue, Today and Completed sections, grouped by priority, with subtasks shown inline.
-- Swipe right to complete and swipe left to delete, with undo.
+- Overdue, Today, Inbox and Upcoming deadlines sections, grouped by priority, plus a weekly summary and a daily quote.
+- Choose which sections you see and in what order.
 
 ### ✅ Tasks
-- **Quick capture:** tap **+** to add a task, or press and hold for a note, habit or focus session.
-- Natural typing: `tomorrow`, `!high` and `#tag` are understood as you write.
-- Due and start dates, times, repeats (daily, weekly, monthly, custom), multiple reminders and attachments.
+- **Quick capture** with natural typing: `tomorrow`, `friday`, `!high` and `#tag` are understood as you write.
+- Due and start dates, times, repeats (daily, weekly, monthly, custom), multiple reminders, subtasks, links and attachments.
 - **Dependencies:** a task waiting on another can't be completed or deleted until its blocker is done.
-- Inbox, Upcoming (Tomorrow / This week / Next week), All tasks and Completed views.
+- Projects, lists and tags, plus Inbox, Upcoming (Tomorrow / This week / Next week) and Completed views.
 
 ### 📅 Calendar
-- **Month, week and year** views with coloured task dots.
-- Long-press a task in week view and drag it to another day to reschedule it.
+- **Month, week and year** views, with repeating tasks shown ahead of time.
+- Drag a task to another day to reschedule it.
 
 ### 🔥 Habits
-- Daily, x-times-a-week or specific-day habits, plus counters (for example 5/8 glasses).
-- Streaks, a week-at-a-glance row of check-ins, and a satisfying haptic on every check-in.
+- Daily, x-times-a-week or specific-day habits, plus counters (for example 5/8 glasses of water).
+- Streaks that forgive unscheduled days, and a week-at-a-glance row of check-ins.
 
 ### ⏱️ Focus
-- A Pomodoro-style focus timer with an expressive ring that changes shape as time passes.
-- Gentle vibration in the last seconds, and it keeps running safely in the background.
+- A Pomodoro-style focus timer with short and long breaks, linked to the task you're working on.
+- A daily focus goal and a record of every session.
 
 ### 📊 Statistics
 - Day, week and month views: completed vs. remaining, completion rate, missed deadlines, focus time and habit consistency, with trends against the previous period.
+- A heatmap of everything you've completed over the last few months.
 
 ### 📝 Notes
-- Rich text: bold, italic, underline, strikethrough, text colour, highlight, alignment and lists.
-- Inline checklists, `#labels` with custom icons, colour-coded notes, pinning and search.
-- Add images, drawings and voice notes. Press and hold **New Note** to start with one.
+- Rich text: bold, italic, underline, strikethrough, headings and lists.
+- Checklists, `#labels`, colour-coded notes, pinning and search.
 
-### 🧩 Home-screen widgets
-Seven widgets: **Today's tasks, Daily progress, Next up, Habit streaks, Streak flower, Focus timer** and **Quick add**. They resize to fit any home-screen grid (4×5, 5×5, 5×6 and more), and each can have its own artistic background in Settings.
+### 🔔 Reminders and updates
+- Reminders for tasks, habits and the focus timer, with **Complete** and **Snooze** right from the notification.
+- Both apps check this page for new versions and offer a one-click update.
 
-### 🎨 Design
-- Material 3 Expressive throughout: Google Sans Flex, large rounded surfaces, springy motion and haptics.
-- Themes: dynamic colour (Material You), monochrome, five gradients and a dynamic gradient, in light or dark.
-- Tested on screens from 320 dp small phones and 130% font size to foldables and landscape.
+## On your phone
 
-### 🔄 Automatic updates
-- Dayline checks this repository's releases in the background, downloads new versions and lets you know with a notification.
-- Open the app and a popup offers a one-tap update. You can also check any time in **More → Check for updates**.
+- **Home-screen widgets:** Today's tasks, Daily progress, Next up, Habit streaks, Streak flower, Focus timer and Quick add. They fit any home-screen grid, and each can have its own artistic background.
+- **Material 3 Expressive design:** dynamic colour (Material You), monochrome and gradient themes, springy motion and haptics.
+- **Gestures:** swipe right to complete and left to delete, with undo; press and hold **+** to add a note, habit or focus session.
+- **Notes extras:** add images, drawings and voice notes.
 
-### 🔒 Sync and privacy
-- Works fully offline. Everything is stored on your phone.
-- Optional **Google sync** keeps a private copy in your own Google Drive's hidden app folder and keeps your devices in step. Switch accounts or disconnect any time. Nothing ever goes to a Dayline server, because there isn't one.
-- Export and import a full JSON backup at any time.
-- [Privacy policy](https://vishalchavan7.github.io/privacy.html)
+## On your Mac
+
+- **A real Mac app:** sidebar navigation, a details panel for the selected task, and light and dark mode.
+- **Menu bar:** today's tasks and habits, quick add and the focus timer, without opening the app.
+- **Keyboard first:** ⌘N for a new task, ⌘1–⌘8 to jump between sections, ⇧⌘F to start or pause the focus timer.
+
+<p align="center"><img src="docs/gallery-mac.png" alt="Dayline for Mac: calendar, habits, notes and statistics" width="100%"></p>
+
+## Use it on your phone and Mac together
+
+1. On your phone, open **Settings → Google sync** and connect your Google account.
+2. On your Mac, connect the **same Google account** when Dayline asks (or later in **Settings → Sync**).
+
+Your tasks, projects, habits, notes, focus history and settings then stay in step on both. If both devices change before they can sync, Dayline keeps one version and saves the other, so nothing is lost.
 
 ## Screenshots
 
@@ -116,52 +122,17 @@ Seven widgets: **Today's tasks, Daily progress, Next up, Habit streaks, Streak f
 **Dark mode**
 <p align="center"><img src="docs/gallery-dark.png" alt="Today, calendar, habits and notes in dark mode" width="100%"></p>
 
-## Tech stack
+## Privacy
 
-| | |
-|---|---|
-| Language & UI | Kotlin 2.3, Jetpack Compose, Material 3 Expressive |
-| Architecture | MVVM with clean layers: pure-Kotlin domain rules, Room repositories as the single source of truth, `Flow`-driven screens |
-| Data | Room, DataStore, JSON backup |
-| Background work | WorkManager, AlarmManager (exact reminders), a background-safe focus timer |
-| Widgets | Jetpack Glance |
-| Sync | Google Identity authorization and the Drive REST API (`drive.appdata` scope only) |
-| DI & tests | Hilt; JUnit, Robolectric, Turbine and Roborazzi screenshot tests across 9 phone set-ups |
+- Works fully offline. Everything is stored on your own devices.
+- Google sync is optional. It keeps one private file in your own Google Drive's hidden app folder, which Dayline can't use to see any of your other files. Switch accounts or disconnect any time.
+- No ads, no analytics, no tracking, and no Dayline server, so your data never goes to the developer.
+- Export and restore a full backup any time; backups move freely between the phone and the Mac.
+- Read the [privacy policy](https://vishalchavan7.github.io/privacy.html).
 
-```
-app/src/main/java/com/dayline/app/
-├── core/          models, domain rules (recurrence, streaks, stats, quick-add parser), Room, repositories, backup
-├── notifications/ reminders, channels, alarm scheduling
-├── focus/         focus timer controller
-├── sync/          Google Drive sync
-├── widget/        home-screen widgets
-└── ui/            Compose screens, ViewModels, theme and components
-```
+## Feedback and contributing
 
-## Getting started
-
-**Requirements:** Android Studio 2025.2+ (or JDK 17 and Android SDK 36). Gradle downloads itself through the wrapper.
-
-```bash
-./gradlew :app:assembleDebug        # build the APK
-./gradlew :app:installDebug         # install on a connected phone
-./gradlew :app:testDebugUnitTest    # run all unit, flow and screenshot tests
-```
-
-In Android Studio: **File → Open**, choose this folder, wait for Gradle sync, then press **Run ▶**.
-
-### Google sync (developer setup)
-Sync needs a one-time Google Cloud setup: enable the **Google Drive API**, configure the OAuth consent screen with the `drive.appdata` scope, and add an **Android OAuth client** for `com.dayline.app` with your signing key's SHA-1. Every build writes that SHA-1 to `outputs/google-sync-setup.txt`. Users then connect with one tap in **Settings → Google sync**.
-
-## Contributing
-
-Contributions are welcome, whether that's a bug report, an idea, a translation, a design tweak or code.
-
-1. Look through [open issues](https://github.com/VishalChavan7/Dayline/issues) or open a new one to discuss your idea.
-2. Fork the repo, create a branch, make your change, and run `./gradlew :app:testDebugUnitTest`.
-3. Open a pull request with a short description and, for UI changes, before and after screenshots.
-
-See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide, code style and project conventions.
+Found a bug or have an idea? [Open an issue](https://github.com/VishalChavan7/Dayline/issues/new/choose). Contributions of any kind are welcome, whether that's a bug report, a design tweak, a translation or code. See **[CONTRIBUTING.md](CONTRIBUTING.md)** to get started.
 
 ## License
 

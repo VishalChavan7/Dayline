@@ -19,18 +19,27 @@ body:
         3. …
     validations:
       required: true
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which app?
+      options:
+        - Android
+        - Mac
+    validations:
+      required: true
   - type: input
     id: device
     attributes:
-      label: Phone and Android version
-      placeholder: e.g. Galaxy S25, Android 16
+      label: Device and system version
+      placeholder: e.g. Galaxy S25, Android 16 — or MacBook Air M1, macOS 15.7
     validations:
       required: true
   - type: input
     id: version
     attributes:
       label: Dayline version
-      description: Settings → About, or the release you installed.
+      description: "Android: Settings → About. Mac: Dayline → About Dayline. Or the release you installed."
   - type: textarea
     id: screenshots
     attributes:

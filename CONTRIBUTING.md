@@ -4,11 +4,11 @@ Thanks for helping make Dayline better! Bug reports, ideas, design feedback, tra
 
 ## Before you start
 
-- **Found a bug?** [Open a bug report](https://github.com/VishalChavan7/Dayline/issues/new?template=bug_report.yml) with your phone model, Android version and steps to reproduce.
+- **Found a bug?** [Open a bug report](https://github.com/VishalChavan7/Dayline/issues/new?template=bug_report.yml) with your device (phone model and Android version, or Mac model and macOS version) and steps to reproduce.
 - **Have an idea?** [Suggest a feature](https://github.com/VishalChavan7/Dayline/issues/new?template=feature_request.yml) first, so we can agree on the approach before you spend time on it.
 - **Want to code?** Pick an open issue (look for `good first issue` or `help wanted`) and comment that you're working on it.
 
-## Set up the project
+## Set up the Android app
 
 1. Install **Android Studio 2025.2+** (or JDK 17 and Android SDK 36).
 2. Fork this repository and clone your fork.
@@ -22,6 +22,18 @@ The debug build installs as `com.dayline.app.debug`, so it can sit next to the r
 ```
 
 Google sync is optional for development. To try it, create your own Google Cloud project and add an Android OAuth client for `com.dayline.app.debug` with your debug key's SHA-1 (printed to `outputs/google-sync-setup.txt` after a build). Everything else works without it.
+
+## Set up the Mac app
+
+The Mac app lives in [`macos/`](macos). It's a SwiftUI app for macOS 14+ that builds with Apple's free Command Line Tools (`xcode-select --install`); Xcode is optional.
+
+```bash
+cd macos
+swift run DaylineChecks   # self-checks for the shared rules and the sync file format
+./build.sh                # builds Dayline.app
+```
+
+The Mac and Android apps share one data format (the backup / Google Drive sync file), so a change to the data model needs to land in both. See [macos/README.md](macos/README.md) for details.
 
 ## How the code is organised
 
