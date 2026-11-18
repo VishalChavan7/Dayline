@@ -24,7 +24,7 @@
 
 A quick narrated tour: planning your day, capturing tasks, the calendar, habits, focus, notes and journal, statistics and widgets, and how your phone and Mac stay in sync.
 
-https://github.com/user-attachments/assets/f4f4b528-0639-4365-9d24-b5ecd0c67ecd
+https://github.com/user-attachments/assets/37e4667f-01f1-4268-90ad-ae424a800e43
 
 ## Download
 
