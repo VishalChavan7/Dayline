@@ -22,8 +22,6 @@
 
 ## Demo
 
-Why Dayline, in 70 seconds: six apps in one, your Android phone and your Mac kept in sync, and all of it free, with no ads and no tracking.
-
 https://github.com/user-attachments/assets/4902bb03-a516-4dca-b443-4534125a6be2
 
 ## Download
