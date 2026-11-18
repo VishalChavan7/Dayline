@@ -265,6 +265,8 @@ struct TaskScreen<Sections: View>: View {
                         .padding(.horizontal, Page.h - 18)
                 }
             }
+            // Fill the width so the title stays at the left even when there's no list to stretch the column.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             if isEmpty { empty.padding(.top, 60) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

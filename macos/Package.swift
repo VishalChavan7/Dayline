@@ -18,7 +18,7 @@ let package = Package(
                           swiftSettings: [.unsafeFlags(["-application-extension", "-emit-const-values",
                                                          "-Xfrontend", "-const-gather-protocols-file",
                                                          "-Xfrontend", root + "/Resources/AppIntentsProtocols.json"])],
-                          linkerSettings: [.linkedFramework("AppIntents"), .linkedFramework("WidgetKit"), .unsafeFlags(["-Xlinker", "-application_extension"])]),
+                          linkerSettings: [.linkedFramework("AppIntents"), .linkedFramework("WidgetKit"), .unsafeFlags(["-Xlinker", "-application_extension", "-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]),
         // Self-checks for DaylineCore (runs without Xcode's XCTest).
         .executableTarget(name: "DaylineChecks", dependencies: ["DaylineCore"], path: "Sources/DaylineChecks"),
     ]

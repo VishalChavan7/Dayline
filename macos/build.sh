@@ -13,6 +13,7 @@ APP=build/Dayline.app
 rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Dayline"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/WidgetArt/*.png "$APP/Contents/Resources/"
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" Resources/Info.plist > "$APP/Contents/Info.plist"
 
 # Desktop widgets: a WidgetKit extension inside the app.
@@ -21,6 +22,7 @@ WBIN="$(swift build -c release --arch arm64 --show-bin-path)/DaylineWidgets"
 APPEX="$APP/Contents/PlugIns/DaylineWidgets.appex"
 mkdir -p "$APPEX/Contents/MacOS" "$APPEX/Contents/Resources"
 cp "$WBIN" "$APPEX/Contents/MacOS/DaylineWidgets"
+cp Resources/WidgetArt/*.png "$APPEX/Contents/Resources/"
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD/g" Resources/Widgets-Info.plist > "$APPEX/Contents/Info.plist"
 # App Intents metadata, so the widgets' buttons (tick a task, check in a habit) work.
 TMPD="$(mktemp -d)"

@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Download for Android" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white"></a>
-  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.0"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
+  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.1"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
   <img alt="Offline first" src="https://img.shields.io/badge/offline-first-1757D0">
   <img alt="No ads, no tracking" src="https://img.shields.io/badge/ads%20%26%20tracking-none-555">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -22,7 +22,7 @@
 
 ## Demo
 
-Add a task on your Mac, tick a habit on your phone, write in your journal: everything shows up on the other device within seconds.
+A quick narrated tour: planning your day, capturing tasks, the calendar, habits, focus, notes and journal, statistics and widgets, and how your phone and Mac stay in sync.
 
 https://github.com/user-attachments/assets/f4f4b528-0639-4365-9d24-b5ecd0c67ecd
 
@@ -31,7 +31,7 @@ https://github.com/user-attachments/assets/f4f4b528-0639-4365-9d24-b5ecd0c67ecd
 | | Get it | Needs |
 |---|---|---|
 | **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
-| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.0): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
+| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.1): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
 
 Both apps update themselves after you install them.
 
@@ -82,7 +82,7 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer, a notes ap
 
 ### 📝 Notes
 - Rich text: bold, italic, underline, strikethrough, headings and lists.
-- Checklists, `#labels`, colour-coded notes, pinning and search.
+- Checklists, `#labels` with their own icons (rename a label everywhere at once), colour-coded notes, pinning and search.
 
 ### 📔 Journal
 - A quiet place for a few lines a day, kept apart from your notes.
@@ -107,7 +107,7 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer, a notes ap
 - **Tasks and calendar:** month, week (laid out by the hour) and year views; drag tasks to a new day and time.
 - **Habits:** tick today with one click, see your streak and this week at a glance, and open a habit for its history.
 - **Notes and journal:** your colour-coded note cards beside a distraction-free editor, with labels, checklists and formatting, and a journal with daily prompts.
-- **Widgets:** Today's tasks, Habits, Daily progress, Next up, Focus timer and Quick add for your desktop and Notification Centre. Tick tasks and habits or start the timer right from the widget.
+- **Widgets:** Today's tasks, Habits, Daily progress, Next up, Focus timer and Quick add for your desktop and Notification Centre. Tick tasks and habits or start the timer right from the widget, and pick each widget's background art in **Settings → Widgets**, just like on the phone.
 - **Every phone theme:** the same accent colours, monochrome, gradient and dynamic themes as on Android.
 - **Menu bar:** today's tasks and habits, quick add and the focus timer, without opening the app.
 - **Keyboard first:** ⌘N new task, ⌥⌘N new note, ⇧⌘J new journal entry, ⇧⌘H new habit, ⌘R refresh, ⌘1–⌘9 to jump between sections, ⇧⌘F to start or pause the focus timer.

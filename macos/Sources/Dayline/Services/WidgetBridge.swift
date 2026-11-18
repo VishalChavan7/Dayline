@@ -78,6 +78,7 @@ final class WidgetBridge {
     /// What the widgets show right now.
     func snapshot() -> WidgetSnapshot {
         var s = WidgetSnapshot()
+        s.art = store.widgetArt
         let today = store.today
         let f = Formats(store: store)
         s.weekday = today.weekday.name

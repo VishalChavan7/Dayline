@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import DaylineCore
+import WidgetKit
 
 struct SettingsView: View {
     var body: some View {
@@ -10,6 +11,7 @@ struct SettingsView: View {
             RemindersSettings().tabItem { Label("Reminders", systemImage: "bell") }
             FocusSettings().tabItem { Label("Focus", systemImage: "timer") }
             TagsSettings().tabItem { Label("Tags", systemImage: "number") }
+            WidgetsSettings().tabItem { Label("Widgets", systemImage: "square.grid.2x2") }
             SyncSettings().tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
             DataSettings().tabItem { Label("Backup", systemImage: "externaldrive") }
             AboutSettings().tabItem { Label("About", systemImage: "info.circle") }
@@ -200,6 +202,93 @@ struct DataSettings: View {
     }
 }
 
+/// Desktop widgets: how to add them, and the phone's background art for each one.
+struct WidgetsSettings: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.scheme) private var scheme
+    static let widgets: [(key: String?, name: String, symbol: String, about: String)] = [
+        ("tasks", "Today's tasks", "checklist", "Overdue and today's tasks. Tick them off right in the widget."),
+        ("habits", "Habits", "flame", "Today's habits with their streaks. Check in with one click."),
+        ("progress", "Daily progress", "chart.pie", "Your day's ring: tasks and habits done."),
+        ("next_up", "Next up", "arrow.right.circle", "The next task on your day."),
+        ("focus", "Focus timer", "timer", "Start, pause and watch your focus session."),
+        (nil, "Quick add", "plus.circle", "One click to add a task."),
+    ]
+
+    var body: some View {
+        let inApps = Bundle.main.bundlePath.hasPrefix("/Applications/") || Bundle.main.bundlePath.contains("/Applications/")
+        let art = store.widgetArt
+        Form {
+            Section("Add widgets") {
+                VStack(alignment: .leading, spacing: 6) {
+                    step(1, "Right-click an empty spot on your desktop and choose **Edit Widgets…**")
+                    step(2, "Search for **Dayline**, pick a widget and a size, and drag it where you like.")
+                    step(3, "You can also add them to Notification Centre: click the date in the menu bar, then **Edit Widgets**.")
+                }
+                .padding(.vertical, 2)
+                if !inApps {
+                    Label("Widgets only appear when Dayline is in your Applications folder. Move it there and open it once.", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange).font(.callout)
+                }
+                Button("Refresh Widgets") { WidgetCenter.shared.reloadAllTimelines() }
+            }
+            Section("Widgets and backgrounds") {
+                ForEach(Self.widgets, id: \.name) { w in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            IconBadge(symbol: w.symbol, color: scheme.primary, size: 28)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(w.name)
+                                Text(w.about).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        if let key = w.key {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(["none"] + Store.widgetArtStyles, id: \.self) { style in
+                                        artChoice(style, on: (art[key] ?? "none") == style) { store.setWidgetArt(key, style) }
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(minHeight: 420)
+    }
+
+    func step(_ n: Int, _ text: LocalizedStringKey) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(n)").font(.system(size: 11, weight: .bold)).foregroundStyle(scheme.onPrimaryContainer)
+                .frame(width: 18, height: 18).background(Circle().fill(scheme.primaryContainer))
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    func artChoice(_ style: String, on: Bool, _ pick: @escaping () -> Void) -> some View {
+        Button(action: pick) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.05))
+                if style != "none", let url = Bundle.main.url(forResource: "art-" + style, withExtension: "png"), let img = NSImage(contentsOf: url) {
+                    Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    Text("None").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 72, height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(on ? scheme.primary : Color.primary.opacity(0.1), lineWidth: on ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(style.capitalized)
+    }
+}
+
 struct AboutSettings: View {
     @EnvironmentObject var updater: Updater
     var body: some View {
@@ -236,9 +325,11 @@ struct TagsSettings: View {
     @State private var renaming: Tag?
     @State private var deleting: Tag?
     @State private var newName = ""
+    @State private var editingLabel: String?
     var body: some View {
         let counts = Dictionary(grouping: store.data.taskTags, by: \.tagId).mapValues(\.count)
         Form {
+          Section("Task tags") {
             if store.data.tags.isEmpty {
                 Text("No tags yet. Add tags to tasks (or type #tag when adding one) to group related work.").foregroundStyle(.secondary)
             }
@@ -260,9 +351,34 @@ struct TagsSettings: View {
                 .buttonStyle(.borderless)
                 .padding(.vertical, 2)
             }
+          }
+          Section("Note labels") {
+            if store.allNoteLabels.isEmpty {
+                Text("No labels yet. Add #labels to notes to keep them tidy.").foregroundStyle(.secondary)
+            }
+            ForEach(store.allNoteLabels, id: \.self) { l in
+                HStack(spacing: 12) {
+                    Image(systemName: store.labelSymbol(l)).font(.system(size: 13, weight: .semibold)).foregroundStyle(scheme.primary)
+                        .frame(width: 28, height: 28)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(scheme.primaryContainer))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(l)
+                        Text("\(store.noteCount(label: l)) note\(store.noteCount(label: l) == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button { editingLabel = l } label: { Image(systemName: "pencil") }
+                        .help("Rename \(l) or change its icon").accessibilityLabel("Edit \(l)")
+                }
+                .buttonStyle(.borderless)
+                .padding(.vertical, 2)
+            }
+          }
         }
         .formStyle(.grouped)
         .frame(minHeight: 280)
+        .sheet(item: Binding(get: { editingLabel.map(LabelRef.init) }, set: { editingLabel = $0?.name })) { ref in
+            LabelEditor(label: ref.name)
+        }
         .alert("Rename tag", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
             Button("Save") { if let t = renaming { store.renameTag(t.id, newName) }; renaming = nil }

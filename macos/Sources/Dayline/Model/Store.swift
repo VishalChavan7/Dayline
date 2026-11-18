@@ -518,19 +518,68 @@ final class Store: ObservableObject {
     var journalEntries: [Note] { data.notes.filter(isJournal).sorted { $0.createdAt > $1.createdAt } }
     var noteCount: Int { data.notes.filter { !isJournal($0) }.count }
 
+    /// Renames a label on every note that has it, and keeps its icon (as on the phone).
     func renameLabel(_ old: String, _ new: String) {
-        let from = old.lowercased().trimmingCharacters(in: .whitespaces), to = new.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !from.isEmpty, !to.isEmpty, from != to else { return }
+        let from = old.lowercased().trimmingCharacters(in: .whitespaces)
+        let to = new.lowercased().replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "#", with: "").trimmingCharacters(in: .whitespaces)
+        guard !from.isEmpty, !to.isEmpty, from != to, to != Store.journalLabel else { return }
+        let now = Date()
         for i in data.notes.indices {
             var l = labels(of: data.notes[i])
             if l.contains(from) {
                 l = l.map { $0 == from ? to : $0 }
                 var seen = Set<String>()
                 data.notes[i].category = l.filter { seen.insert($0).inserted }.joined(separator: ",")
+                data.notes[i].updatedAt = now
             }
         }
+        var icons = labelIcons
+        if let icon = icons.removeValue(forKey: from) { icons[to] = icon }
+        saveLabelIcons(icons, notify: false)
         changed()
     }
+
+    /// Label → icon key, chosen on either device ("label_icons", the phone's format: key\u{1}icon joined by \u{2}).
+    var labelIcons: [String: String] {
+        var map: [String: String] = [:]
+        for e in (setting("label_icons")?.string ?? "").split(separator: "\u{2}") {
+            let parts = e.split(separator: "\u{1}", omittingEmptySubsequences: false)
+            if parts.count == 2, !parts[0].isEmpty { map[String(parts[0])] = String(parts[1]) }
+        }
+        return map
+    }
+    func labelIcon(_ label: String) -> String? { labelIcons[label.lowercased()] }
+    func labelSymbol(_ label: String) -> String { labelIcon(label).map(Icons.symbol) ?? "tag" }
+    func setLabelIcon(_ label: String, _ icon: String?) {
+        var icons = labelIcons
+        icons[label.lowercased()] = icon
+        saveLabelIcons(icons, notify: true)
+    }
+    private func saveLabelIcons(_ icons: [String: String], notify: Bool) {
+        let s = icons.sorted { $0.key < $1.key }.map { "\($0.key)\u{1}\($0.value)" }.joined(separator: "\u{2}")
+        if notify { set("label_icons", s.isEmpty ? nil : .string(s)) } else if s.isEmpty { data.settings.removeValue(forKey: "label_icons") } else { data.settings["label_icons"] = .string(s) }
+    }
+    /// Background art for each widget, shared with the phone ("widget_art": "tasks=waves,habits=leaves").
+    static let widgetArtStyles = ["waves", "hills", "rings", "blobs", "leaves", "confetti"]
+    static let widgetArtDefaults = ["tasks": "waves", "habits": "leaves", "focus": "rings", "progress": "hills", "next_up": "confetti"]
+    var widgetArt: [String: String] {
+        var map = Store.widgetArtDefaults
+        for e in (setting("widget_art")?.string ?? "").split(separator: ",") {
+            let parts = e.split(separator: "=", omittingEmptySubsequences: false)
+            if parts.count == 2, !parts[0].isEmpty { map[String(parts[0])] = String(parts[1]) }
+        }
+        return map
+    }
+    func setWidgetArt(_ widget: String, _ style: String) {
+        var map: [String: String] = [:]
+        for e in (setting("widget_art")?.string ?? "").split(separator: ",") {
+            let parts = e.split(separator: "=", omittingEmptySubsequences: false)
+            if parts.count == 2 { map[String(parts[0])] = String(parts[1]) }
+        }
+        map[widget] = style
+        set("widget_art", .string(map.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")))
+    }
+    func noteCount(label: String) -> Int { data.notes.filter { labels(of: $0).contains(label) }.count }
 
     // MARK: Reminders and focus
 

@@ -10,6 +10,7 @@
     <key>CFBundleShortVersionString</key><string>__VERSION__</string>
     <key>CFBundleVersion</key><string>__BUILD__</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHumanReadableCopyright</key><string>© 2026 Vishal Chavan · MIT License</string>
     <key>NSExtension</key>

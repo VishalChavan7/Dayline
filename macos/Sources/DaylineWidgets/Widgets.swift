@@ -62,11 +62,25 @@ extension WidgetSnapshot {
 
 private struct Background: View {
     let s: WidgetSnapshot
+    /// Which widget this is, for its background art ("tasks", "habits", …).
+    var art: String? = nil
     var body: some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
             LinearGradient(colors: [s.accentColor.opacity(0.10), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+            if let art, let style = (s.art ?? WidgetArt.defaults)[art] ?? WidgetArt.defaults[art], let img = WidgetArt.image(style) {
+                Image(nsImage: img).resizable().aspectRatio(contentMode: .fill).opacity(0.85)
+            }
         }
+    }
+}
+
+/// The phone's widget background art: translucent shapes, chosen per widget in Settings.
+enum WidgetArt {
+    static let defaults = ["tasks": "waves", "habits": "leaves", "focus": "rings", "progress": "hills", "next_up": "confetti"]
+    static func image(_ style: String) -> NSImage? {
+        guard style != "none", let url = Bundle.main.url(forResource: "art-" + style, withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
     }
 }
 
@@ -150,7 +164,7 @@ struct TasksView: View {
             }
         }
         .widgetURL(URL(string: "dayline://open/today"))
-        .containerBackground(for: .widget) { Background(s: s) }
+        .containerBackground(for: .widget) { Background(s: s, art: "tasks") }
     }
 }
 
@@ -205,7 +219,7 @@ struct HabitsView: View {
             }
         }
         .widgetURL(URL(string: "dayline://open/habits"))
-        .containerBackground(for: .widget) { Background(s: s) }
+        .containerBackground(for: .widget) { Background(s: s, art: "habits") }
     }
 }
 
@@ -235,7 +249,7 @@ struct ProgressWidgetView: View {
                 .font(.system(size: 12, weight: .semibold))
         }
         .widgetURL(URL(string: "dayline://open/today"))
-        .containerBackground(for: .widget) { Background(s: s) }
+        .containerBackground(for: .widget) { Background(s: s, art: "progress") }
     }
 }
 
@@ -281,7 +295,7 @@ struct FocusWidgetView: View {
             .buttonStyle(.plain)
         }
         .widgetURL(URL(string: "dayline://open/focus"))
-        .containerBackground(for: .widget) { Background(s: s) }
+        .containerBackground(for: .widget) { Background(s: s, art: "focus") }
     }
 }
 
@@ -320,7 +334,7 @@ struct NextUpView: View {
             }
         }
         .widgetURL(URL(string: s.next.map { "dayline://task/\($0.id)" } ?? "dayline://open/today"))
-        .containerBackground(for: .widget) { Background(s: s) }
+        .containerBackground(for: .widget) { Background(s: s, art: "next_up") }
     }
 }
 

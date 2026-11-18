@@ -131,10 +131,13 @@ struct Sidebar: View {
     @EnvironmentObject var nav: Navigator
     @Environment(\.scheme) private var scheme
     @Environment(\.controlActiveState) private var windowState
+    /// The row that looks selected. It moves the moment you click, and the page follows on the next frame,
+    /// so the highlight never waits for a heavy page to draw.
+    @State private var shown: Destination = .today
 
     var body: some View {
         let counts = badges()
-        List(selection: $nav.destination) {
+        List {
             Section {
                 ForEach(Destination.main, id: \.self) { row($0, counts[$0]) }
             }
@@ -147,27 +150,55 @@ struct Sidebar: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) { SyncFooter() }
+        .onAppear { shown = nav.destination ?? .today }
+        .onChange(of: nav.destination) { _, d in if let d, d != shown { shown = d } }
     }
 
     func row(_ d: Destination, _ badge: Int?) -> some View {
-        // The highlight is the accent colour only while the window is in front; otherwise it's a light grey.
-        let selected = nav.destination == d && windowState == .key
-        return HStack(spacing: 11) {
-            if selected {
-                // On the highlighted row the tile turns light so the symbol stays visible.
+        let selected = shown == d
+        let strong = selected && windowState == .key
+        return Button {
+            guard shown != d || !nav.search.isEmpty else { return }
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) { shown = d }
+            DispatchQueue.main.async { nav.go(d) }
+        } label: {
+            HStack(spacing: 11) {
                 Image(systemName: d.symbol)
                     .font(.system(size: 24 * 0.48, weight: .semibold))
-                    .foregroundStyle(scheme.onAccent)
+                    .foregroundStyle(strong ? scheme.onAccent : scheme.primary)
                     .frame(width: 24, height: 24)
-                    .background(RoundedRectangle(cornerRadius: 24 * 0.3, style: .continuous).fill(scheme.onAccent.opacity(0.22)))
-            } else {
-                IconBadge(symbol: d.symbol, color: scheme.primary, size: 24)
+                    .background(RoundedRectangle(cornerRadius: 24 * 0.3, style: .continuous)
+                        .fill(strong ? scheme.onAccent.opacity(0.22) : scheme.primary.opacity(0.15)))
+                Text(d.title).font(.system(size: 13.5, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(strong ? scheme.onAccent : Color.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if let badge, badge > 0 {
+                    Text("\(badge)").font(.system(size: 11.5, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle(strong ? scheme.onAccent : Color.secondary)
+                }
             }
-            Text(d.title).font(.system(size: 13.5))
+            .padding(.vertical, 4).padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background { if selected { highlight(strong) } }
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 3)
-        .badge(badge ?? 0)
-        .tag(d)
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
+        .listRowBackground(Color.clear)
+    }
+
+    /// The app's theme colour (or gradient), not the Mac's system accent. Softer while the window is in the background.
+    @ViewBuilder func highlight(_ strong: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.small + 1, style: .continuous)
+        if !strong {
+            shape.fill(scheme.primary.opacity(0.14))
+        } else if let g = scheme.brandStrong {
+            shape.fill(LinearGradient(colors: g, startPoint: .leading, endPoint: .trailing))
+        } else {
+            shape.fill(scheme.accent)
+        }
     }
 
     func badges() -> [Destination: Int] {

@@ -53,6 +53,8 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var accent: UInt32 = 0x2F7DF6
     public var accentEnd: UInt32?
     public var monochrome = false
+    /// Background art per widget ("tasks" → "waves", "none" for plain), the phone's widget_art setting.
+    public var art: [String: String]?
     public init() {}
 }
 

@@ -8,14 +8,21 @@ struct HabitsView: View {
     @EnvironmentObject var nav: Navigator
     @State private var selected: Int64?
     @State private var showArchived = false
+    @Environment(\.scheme) private var scheme
 
     var body: some View {
         let all = store.activeHabits
         let archived = store.data.habits.filter(\.isArchived)
         Group {
             if all.isEmpty && archived.isEmpty {
-                EmptyState(art: .sprout, title: "Grow a new habit", message: "Track every day, specific days, or a number of times a week. Streaks forgive the days you didn't plan.",
-                           action: ("New Habit", { newHabit() }))
+                ZStack {
+                    ScreenTitle(title: "Habits", subtitle: "Nothing planned today")
+                        .padding(.horizontal, Page.h).padding(.top, Page.top)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    EmptyState(art: .sprout, title: "Grow a new habit", message: "Track every day, specific days, or a number of times a week. Streaks forgive the days you didn't plan.",
+                               action: ("New Habit", { newHabit() }))
+                        .padding(.top, 60)
+                }
             } else {
                 HStack(spacing: 0) {
                     list(all, archived)
@@ -52,7 +59,7 @@ struct HabitsView: View {
                     Spacer()
                     ForEach(week, id: \.self) { d in
                         Text(d.weekday.letter).font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(d == today ? Color.accentColor : .secondary)
+                            .foregroundStyle(d == today ? scheme.primary : .secondary)
                             .frame(width: WeekDots.size)
                     }
                 }

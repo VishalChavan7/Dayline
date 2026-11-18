@@ -19,6 +19,7 @@ struct NotesView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var ui: NotesUI
     @State private var label: String?
+    @State private var editingLabel: String?
     @State private var query = ""
 
     var body: some View {
@@ -38,6 +39,9 @@ struct NotesView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle("Notes")
+        .sheet(item: Binding(get: { editingLabel.map(LabelRef.init) }, set: { editingLabel = $0?.name })) { ref in
+            LabelEditor(label: ref.name) { renamed in if label == ref.name { label = renamed } }
+        }
     }
 
     var notes: [Note] {
@@ -64,7 +68,16 @@ struct NotesView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         Chip(text: "All", on: label == nil) { label = nil }
-                        ForEach(store.allNoteLabels, id: \.self) { l in Chip(text: l, symbol: "tag", on: label == l) { label = l } }
+                        ForEach(store.allNoteLabels, id: \.self) { l in
+                            Chip(text: l, symbol: store.labelSymbol(l), on: label == l) { label = l }
+                                .help("Right-click to rename it or change its icon")
+                                .contextMenu {
+                                    Button("Rename and Change Icon…") { editingLabel = l }
+                                }
+                        }
+                        if !store.allNoteLabels.isEmpty {
+                            IconButton(symbol: "slider.horizontal.3", help: "Rename labels or change their icons", size: 26) { editingLabel = label ?? store.allNoteLabels.first }
+                        }
                     }
                 }
                 .padding(.bottom, 4)
@@ -122,7 +135,7 @@ struct NoteCard: View {
             if !labels.isEmpty {
                 HStack(spacing: 4) {
                     ForEach(labels.prefix(3), id: \.self) { l in
-                        Label(l, systemImage: "tag").labelStyle(CompactLabel()).font(.system(size: 10.5, weight: .medium))
+                        Label(l, systemImage: store.labelSymbol(l)).labelStyle(CompactLabel()).font(.system(size: 10.5, weight: .medium))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.07)))
                     }
@@ -169,9 +182,7 @@ struct NotePane: View {
                         Text(meta).font(.system(size: 12)).foregroundStyle(.tertiary)
                         Spacer()
                         if !journal {
-                            Menu {
-                                NoteColorItems(selected: note.color) { c in note.color = c; changed() }
-                            } label: { Image(systemName: "paintpalette") }.menuStyle(.borderlessButton).fixedSize().help("Colour")
+                            NoteColorButton(selected: note.color) { c in note.color = c; changed() }
                         }
                         Button { note.isPinned.toggle(); changed() } label: {
                             Image(systemName: journal ? (note.isPinned ? "bookmark.fill" : "bookmark") : (note.isPinned ? "pin.fill" : "pin"))
@@ -225,7 +236,8 @@ struct NotePane: View {
         HStack(spacing: 6) {
             ForEach(labels, id: \.self) { l in
                 HStack(spacing: 3) {
-                    Text("#" + l)
+                    Image(systemName: store.labelSymbol(l)).font(.system(size: 10, weight: .semibold))
+                    Text(l)
                     Button { labels.removeAll { $0 == l }; changed() } label: { Image(systemName: "xmark").font(.caption2) }.buttonStyle(.borderless)
                 }
                 .font(.system(size: 12, weight: .semibold))
@@ -308,11 +320,67 @@ struct NoteColorItems: View {
     let apply: (Int32) -> Void
     var body: some View {
         Button { apply(0) } label: { Label { Text(selected == 0 ? "Default ✓" : "Default") } icon: { Image(nsImage: Swatch.image(nil)) } }
+            .labelStyle(.titleAndIcon)
         ForEach(NoteColors.all) { sw in
             Button { apply(sw.key) } label: {
                 Label { Text(selected == sw.key ? "\(sw.name) ✓" : sw.name) } icon: { Image(nsImage: Swatch.image(sw)) }
             }
+            .labelStyle(.titleAndIcon)
         }
+    }
+}
+
+/// The note's colour: a swatch of the current colour that opens a palette of every colour, each with its name.
+struct NoteColorButton: View {
+    let selected: Int32
+    let apply: (Int32) -> Void
+    @State private var open = false
+    @Environment(\.scheme) private var scheme
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "paintpalette")
+                dot(selected, size: 12)
+            }
+        }
+        .buttonStyle(.borderless)
+        .help("Colour")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Note colour").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(58), spacing: 6), count: 4), spacing: 10) {
+                    choice(0, "Default")
+                    ForEach(NoteColors.all) { sw in choice(sw.key, sw.name) }
+                }
+            }
+            .padding(14)
+        }
+    }
+
+    func choice(_ key: Int32, _ name: String) -> some View {
+        Button { apply(key); open = false } label: {
+            VStack(spacing: 5) {
+                ZStack {
+                    dot(key, size: 30)
+                    if key == selected {
+                        Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Color.primary.opacity(0.75))
+                    }
+                }
+                .overlay(Circle().strokeBorder(key == selected ? scheme.primary : .clear, lineWidth: 2).padding(-3))
+                Text(name).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(width: 58)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(name)
+    }
+
+    @ViewBuilder func dot(_ key: Int32, size: CGFloat) -> some View {
+        Circle().fill(NoteColors.color(key) ?? scheme.card)
+            .overlay(Circle().strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+            .frame(width: size, height: size)
     }
 }
 
@@ -335,5 +403,87 @@ enum Swatch {
         img.isTemplate = false
         cache[key] = img
         return img
+    }
+}
+
+struct LabelRef: Identifiable { let name: String; var id: String { name } }
+
+/// Rename a #label (on every note that has it) and pick its icon, like the phone's label sheet.
+struct LabelEditor: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scheme) private var scheme
+    @State var label: String
+    var onRename: (String) -> Void = { _ in }
+    @State private var name = ""
+
+    var body: some View {
+        let current = store.labelIcon(label)
+        let labels = store.allNoteLabels
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Note labels").font(.system(size: 17, weight: .bold))
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            if labels.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(labels, id: \.self) { l in
+                            Chip(text: l, symbol: store.labelSymbol(l), on: l == label) { label = l; name = l }
+                        }
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Name").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    TextField("Label name", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(rename)
+                    Button("Rename", action: rename)
+                        .disabled(clean.isEmpty || clean == label.lowercased() || clean == Store.journalLabel)
+                }
+                Text("Renames #\(label) on all \(store.noteCount(label: label)) note\(store.noteCount(label: label) == 1 ? "" : "s") that use it, here and on your phone.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Icon").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                    Spacer()
+                    if current != nil { Button("Use default") { store.setLabelIcon(label, nil) }.buttonStyle(.borderless).font(.caption) }
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(40), spacing: 8), count: 8), spacing: 8) {
+                    ForEach(Icons.keys, id: \.self) { key in
+                        let on = key == current
+                        Button { store.setLabelIcon(label, key) } label: {
+                            Image(systemName: Icons.symbol(key))
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(on ? scheme.onPrimaryContainer : Color.secondary)
+                                .frame(width: 40, height: 40)
+                                .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(on ? scheme.primaryContainer : Color.primary.opacity(0.06)))
+                                .overlay(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).strokeBorder(on ? scheme.primary : .clear, lineWidth: 1.5))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(key.capitalized)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .onAppear { name = label }
+    }
+
+    var clean: String { name.lowercased().replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "#", with: "").trimmingCharacters(in: .whitespaces) }
+
+    func rename() {
+        let to = clean
+        guard !to.isEmpty, to != label.lowercased(), to != Store.journalLabel else { return }
+        store.renameLabel(label, to)
+        onRename(to)
+        label = to
+        name = to
     }
 }
