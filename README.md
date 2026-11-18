@@ -22,7 +22,7 @@
 
 ## Demo
 
-https://github.com/user-attachments/assets/4902bb03-a516-4dca-b443-4534125a6be2
+https://github.com/user-attachments/assets/f7b61f04-65f1-4bd7-b25c-8e7d26689c76
 
 ## Download
 
