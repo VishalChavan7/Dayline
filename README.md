@@ -22,7 +22,7 @@
 
 ## Demo
 
-A quick narrated tour: planning your day, capturing tasks, the calendar, habits, focus, notes and journal, statistics and widgets, and how your phone and Mac stay in sync.
+Why Dayline, in 70 seconds: six apps in one, your Android phone and your Mac kept in sync, and all of it free, with no ads and no tracking.
 
 https://github.com/user-attachments/assets/37e4667f-01f1-4268-90ad-ae424a800e43
 
