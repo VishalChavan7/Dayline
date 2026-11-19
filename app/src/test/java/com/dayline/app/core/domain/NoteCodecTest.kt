@@ -47,22 +47,10 @@ class NoteCodecTest {
         assertTrue(!NoteBody("", media = media).isEmpty)
     }
 
-    @Test fun finishedHashtagsAreLifted() {
-        val t = "Plan #work stuff #ide"
-        assertEquals(listOf(4..9 to "work"), NoteCodec.completedHashtags(t))
-        assertEquals(listOf("work", "ide"), NoteCodec.completedHashtags(t, all = true).map { it.second })
-    }
-
-    @Test fun checklistLinesStayInPlace() {
-        val html = "<p>One</p><p><b>Two</b></p><br><p>Three</p>"
-        val on = NoteCodec.toggleChecklistLines(html, listOf(1))
-        assertEquals("<p>One</p><p><b>\u2610 Two</b></p><br><p>Three</p>", on)
-        val ticked = NoteCodec.toggleCheck(on, 1)
-        assertEquals("<p>One</p><p><b>${NoteCodec.CHECK_DONE}Two</b></p><br><p>Three</p>", ticked)
-        assertEquals(on, NoteCodec.toggleCheck(ticked, 1))
-        assertEquals(html, NoteCodec.toggleChecklistLines(on, listOf(1)))
-        assertEquals("<p>One</p><p><b>Two</b></p><p>\u2610 </p><p>Three</p>", NoteCodec.addCheck(html, 2))
-        assertEquals(html, NoteCodec.removeCheck(on, 1))
+    @Test fun checkPrefixes() {
+        assertEquals(2, NoteCodec.checkPrefix("\u2610 Two"))
+        assertEquals(3, NoteCodec.checkPrefix("${NoteCodec.CHECK_DONE}Two"))
+        assertEquals(0, NoteCodec.checkPrefix("Two"))
     }
 
     @Test fun checklistRunsSplitInPlace() {

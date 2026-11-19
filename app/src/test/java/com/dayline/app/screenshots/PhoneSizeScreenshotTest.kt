@@ -169,6 +169,9 @@ class PhoneSizeScreenshotTest(private val device: Device) {
         )
     }
     @Test fun noteLocked() = render("18c_note_locked") {
+        // A phone with a screen lock (without one, a locked note simply opens).
+        org.robolectric.Shadows.shadowOf(androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+            .getSystemService(android.app.KeyguardManager::class.java)).setIsDeviceSecure(true)
         val body = androidx.compose.runtime.remember { com.dayline.app.ui.notes.NoteBodyModel().apply { load("<p>secret</p>") } }
         com.dayline.app.ui.notes.NoteEditorContent(
             com.dayline.app.ui.notes.NoteEditorState(loading = false, note = com.dayline.app.core.model.Note(id = 9, title = "Bank details", locked = true)),

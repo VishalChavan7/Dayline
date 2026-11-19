@@ -132,6 +132,8 @@ enum ScreenshotMode {
             s.nav.newTaskDraft = nil
             try? await Task.sleep(for: .seconds(0.8))
         }
+        NSApp.appearance = NSAppearance(named: .aqua)
+        await NotesSelfTest.run(s, window: window, dir: dir)
     }
 
     /// Before/after frames: a task added on the Mac, a habit ticked on the phone, a journal entry written on the Mac.

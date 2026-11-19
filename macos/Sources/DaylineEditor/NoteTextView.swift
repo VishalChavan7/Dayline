@@ -68,6 +68,16 @@ public final class NoteTextView: NSTextView, NSTextStorageDelegate {
         textStorage?.delegate = self
     }
 
+    // Spelling and grammar choices from the Edit menu are remembered for every note.
+    public override func toggleContinuousSpellChecking(_ sender: Any?) {
+        super.toggleContinuousSpellChecking(sender)
+        UserDefaults.standard.set(isContinuousSpellCheckingEnabled, forKey: "notesSpellCheck")
+    }
+    public override func toggleGrammarChecking(_ sender: Any?) {
+        super.toggleGrammarChecking(sender)
+        UserDefaults.standard.set(isGrammarCheckingEnabled, forKey: "notesGrammarCheck")
+    }
+
     // MARK: Appearance
 
     /// Sets light or dark, recolouring the text so it can never be white on white (or black on black).
@@ -612,9 +622,6 @@ public final class NoteTextView: NSTextView, NSTextStorageDelegate {
     }
 
     // MARK: Blocks
-
-    /// The block at the selection: "quote", "callout:tip", "code:swift", "table", "hr" or nil.
-    public var currentBlock: String? { attr(.dlBlock, paragraphs(in: selectedRange()).first!) }
 
     /// Wraps the selected lines in a quote, a callout ("callout:<kind>") or a code block ("code:<language>"),
     /// or takes them out of it when they already are.

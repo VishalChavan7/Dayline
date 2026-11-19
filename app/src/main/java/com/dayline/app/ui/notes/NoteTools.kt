@@ -150,10 +150,17 @@ fun rememberDeviceUnlock(onResult: (Boolean) -> Unit): (String) -> Unit {
                         )
                         .build()
                     val main: Executor = context.mainExecutor
-                    prompt.authenticate(CancellationSignal(), main, object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
-                        override fun onAuthenticationSucceeded(r: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) = result.value(true)
-                        override fun onAuthenticationError(code: Int, msg: CharSequence?) = result.value(false)
-                    })
+                    val started = runCatching {
+                        prompt.authenticate(CancellationSignal(), main, object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                            override fun onAuthenticationSucceeded(r: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) = result.value(true)
+                            override fun onAuthenticationError(code: Int, msg: CharSequence?) = result.value(false)
+                        })
+                    }.isSuccess
+                    if (!started) {
+                        // No biometric service: ask for the screen lock instead.
+                        @Suppress("DEPRECATION")
+                        km.createConfirmDeviceCredentialIntent("Unlock note", reason)?.let { legacy.launch(it) } ?: result.value(false)
+                    }
                 }
                 else -> {
                     @Suppress("DEPRECATION")

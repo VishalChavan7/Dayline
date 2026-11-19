@@ -1,5 +1,6 @@
 package com.dayline.app.ui.notes
 
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.DeleteForever
@@ -1038,7 +1039,7 @@ class NoteEditorViewModel @Inject constructor(
     /** The note a [[link]] points at, made when it doesn't exist yet. */
     suspend fun linkedNote(title: String): Long {
         val t = title.trim()
-        allNotes.value.filter { it.trashedAt == null && it.title.trim().equals(t, ignoreCase = true) }.maxByOrNull { it.updatedAt }?.let { return it.id }
+        repo.allNotes.first().filter { it.trashedAt == null && it.title.trim().equals(t, ignoreCase = true) }.maxByOrNull { it.updatedAt }?.let { return it.id }
         return repo.save(Note(title = t))
     }
 }
@@ -1242,6 +1243,8 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
             ) {
                 IconButton(onClick = actions.onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Save and go back") }
                 Spacer(Modifier.weight(1f))
+                // Nothing to share, print or change until a locked note is unlocked.
+                if (unlocked) {
                 IconButton(onClick = { jump(cursor - 1) }, enabled = cursor > 0) { Icon(Icons.AutoMirrored.Rounded.Undo, "Undo") }
                 IconButton(onClick = { jump(cursor + 1) }, enabled = cursor < history.lastIndex) { Icon(Icons.AutoMirrored.Rounded.Redo, "Redo") }
                 IconButton(onClick = { actions.onUpdate { it.copy(isPinned = !it.isPinned) } }) {
@@ -1292,6 +1295,7 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
                                 onClick = { menu = false; actions.onDelete() })
                         }
                     }
+                }
                 }
             }
         },
@@ -1962,11 +1966,7 @@ internal fun RichTextState.paragraphText(r: IntRange): String {
     return t.substring(r.first.coerceIn(0, t.length), (r.last + 1).coerceIn(0, t.length)).trimEnd(' ', '\n')
 }
 
-/** Caret position at the end of paragraph [k]'s text. */
-internal fun List<IntRange>.lineEnd(state: RichTextState, k: Int): Int {
-    val r = getOrNull(k) ?: return state.annotatedString.text.length
-    return r.first + state.paragraphText(r).length
-}
+
 
 
 /** Checklist lines on a note card, drawn like the note's own checklist preview. */

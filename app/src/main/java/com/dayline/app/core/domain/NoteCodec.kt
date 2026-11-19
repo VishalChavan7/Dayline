@@ -27,23 +27,6 @@ object NoteCodec {
     /** #tag, or a nested #tag/inside/another (up to six levels). */
     private val hashtag = Regex("(?<![\\p{L}\\p{N}_&#/])#([\\p{L}\\p{N}_-]{1,32}(?:/[\\p{L}\\p{N}_-]{1,32}){0,5})")
 
-    /**
-     * Finished #words in [text] — followed by a space or line break (or anywhere when [all]) — as
-     * (range to remove, label). Typing "#work " turns it into a tag and takes it out of the text.
-     */
-    fun completedHashtags(text: String, all: Boolean = false): List<Pair<IntRange, String>> =
-        hashtag.findAll(text).mapNotNull { m ->
-            val tag = m.groupValues[1]
-            if (tag.none { it.isLetter() }) return@mapNotNull null
-            val next = text.getOrNull(m.range.last + 1)
-            val finished = all || next == ' ' || next == '\u00A0' || next == '\n'
-            if (!finished) return@mapNotNull null
-            // Take the space *before* the tag, never the character after it: that may be the break
-            // between two paragraphs, and removing it would merge them (and shift their alignment).
-            val start = if (m.range.first > 0 && text[m.range.first - 1] == ' ') m.range.first - 1 else m.range.first
-            (start..m.range.last) to tag.lowercase()
-        }.toList()
-
     /** Labels typed as #words anywhere in the note (lower-case, unique, in order of appearance). */
     fun labels(text: String): List<String> = hashtag.findAll(text)
         .map { it.groupValues[1].lowercase() }
@@ -128,14 +111,12 @@ object NoteCodec {
     // ------------------------------------------------------------ in-text checklist lines
     //
     // A checklist line can also live inside the formatted text, where it was written: it simply
-    // starts with a box character. These helpers edit those lines in the note's HTML, one
-    // paragraph ("block") at a time: <p>, <li>, <h1>-<h6>, or a bare <br> for an empty line.
+    // starts with a box character. Paragraphs ("blocks") are <p>, <li>, <h1>-<h6>, or a bare <br>.
 
     const val CHECK_OPEN = "\u2610 "
     const val CHECK_DONE = "\u2611\uFE0E "
 
     private val block = Regex("<(p|li|h[1-6])(\\s[^>]*)?>(.*?)</\\1>|<br\\s*/?>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-    private val leadingTags = Regex("^(\\s*<(?!/|br\\b)[^>]*>)*", RegexOption.IGNORE_CASE)
 
     /** Length of the check prefix at the start of a paragraph's plain text (0 if none). */
     fun checkPrefix(text: String): Int {
@@ -148,78 +129,6 @@ object NoteCodec {
     }
 
     fun isDoneLine(text: String) = text.startsWith("\u2611")
-
-    private fun editBlock(html: String, index: Int, edit: (String) -> String): String {
-        var n = -1
-        return block.replace(html) { m ->
-            n++
-            if (n != index) return@replace m.value
-            if (m.groupValues[1].isEmpty()) {
-                // An empty line written as <br>.
-                val inner = edit("")
-                if (inner.isEmpty()) m.value else "<p>$inner</p>"
-            } else {
-                val tag = m.groupValues[1]
-                "<$tag${m.groupValues[2]}>" + edit(m.groupValues[3]) + "</$tag>"
-            }
-        }
-    }
-
-    /** Splits a block's inner HTML into its opening tags and the rest (which starts with the text). */
-    private fun splitLead(inner: String): Pair<String, String> {
-        val lead = leadingTags.find(inner)?.value.orEmpty()
-        return lead to inner.substring(lead.length)
-    }
-
-    /** Turns the given paragraphs into checklist lines; if they all already are, turns them back. */
-    fun toggleChecklistLines(html: String, indices: Collection<Int>): String {
-        val all = indices.all { i -> lineHasCheck(html, i) }
-        var out = html
-        indices.forEach { i ->
-            out = editBlock(out, i) { inner ->
-                val (lead, rest) = splitLead(inner)
-                val p = checkPrefix(rest)
-                when {
-                    all && p > 0 -> lead + rest.substring(p)
-                    !all && p == 0 -> lead + CHECK_OPEN + rest
-                    else -> inner
-                }
-            }
-        }
-        return out
-    }
-
-    /** Ticks or unticks one checklist line. */
-    fun toggleCheck(html: String, index: Int): String = editBlock(html, index) { inner ->
-        val (lead, rest) = splitLead(inner)
-        when {
-            isDoneLine(rest) -> lead + CHECK_OPEN + rest.substring(checkPrefix(rest))
-            rest.startsWith(CHECK_OPEN) -> lead + CHECK_DONE + rest.substring(CHECK_OPEN.length)
-            else -> inner
-        }
-    }
-
-    /** Adds an empty checkbox to one (new, empty) line. */
-    fun addCheck(html: String, index: Int): String = editBlock(html, index) { inner ->
-        val (lead, rest) = splitLead(inner)
-        if (checkPrefix(rest) > 0) inner else lead + CHECK_OPEN + rest.replaceFirst(Regex("^<br\\s*/?>", RegexOption.IGNORE_CASE), "")
-    }
-
-    /** Removes the checkbox from one line. */
-    fun removeCheck(html: String, index: Int): String = editBlock(html, index) { inner ->
-        val (lead, rest) = splitLead(inner)
-        val p = checkPrefix(rest)
-        if (p == 0) inner else lead + rest.substring(p)
-    }
-
-    private fun lineHasCheck(html: String, index: Int): Boolean {
-        var n = -1
-        block.findAll(html).forEach { m ->
-            n++
-            if (n == index) return checkPrefix(splitLead(m.groupValues[3]).second) > 0
-        }
-        return false
-    }
 
     /** A piece of a note body: formatted HTML, or a run of checklist lines that sat in the text. */
     sealed interface BodyPart {
