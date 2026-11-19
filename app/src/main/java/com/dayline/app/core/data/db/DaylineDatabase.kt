@@ -4,6 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -21,7 +22,7 @@ import androidx.room.migration.Migration
         NoteEntity::class,
         FocusSessionEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -42,6 +43,15 @@ abstract class DaylineDatabase : RoomDatabase() {
          * to app/schemas for verification). Destructive fallback is deliberately NOT enabled so user data is
          * never silently wiped by an upgrade.
          */
-        val MIGRATIONS: Array<Migration> = emptyArray()
+        val MIGRATIONS: Array<Migration> = arrayOf(
+            // 1.1.4: notes can be archived, trashed and locked.
+            object : Migration(1, 2) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE notes ADD COLUMN archivedAt INTEGER")
+                    db.execSQL("ALTER TABLE notes ADD COLUMN trashedAt INTEGER")
+                    db.execSQL("ALTER TABLE notes ADD COLUMN locked INTEGER NOT NULL DEFAULT 0")
+                }
+            },
+        )
     }
 }

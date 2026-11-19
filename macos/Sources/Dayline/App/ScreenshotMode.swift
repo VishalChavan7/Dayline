@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import DaylineCore
+import DaylineEditor
 
 /// `Dayline --screenshots <folder>`: opens with sample data, captures every screen in light and dark, then quits.
 /// Used to check the design; it never touches your real data.
@@ -55,6 +56,63 @@ enum ScreenshotMode {
             if let id = s.store.data.notes.first?.id { s.notesUI.open(id) }
             try? await Task.sleep(for: .seconds(1.5))
             capture(window, dir.appendingPathComponent("note-\(mode).png"))
+            // A brand-new note, typed into like a person would: the text must be readable.
+            s.notesUI.newNote()
+            try? await Task.sleep(for: .seconds(1.0))
+            if let tv = findTextView(window.contentView) {
+                window.makeFirstResponder(tv)
+                tv.insertText("Typed into a new note.", replacementRange: tv.selectedRange())
+                try? await Task.sleep(for: .seconds(1.6))   // the note saves and gets its id
+                let tv2 = findTextView(window.contentView) ?? tv
+                if tv2 !== tv { window.makeFirstResponder(tv2) }
+                tv2.insertText(" More words after saving.", replacementRange: NSRange(location: (tv2.string as NSString).length, length: 0))
+                try? await Task.sleep(for: .seconds(1.0))
+                report(dir, "newnote-\(mode)", tv2)
+            }
+            capture(window, dir.appendingPathComponent("newnote-\(mode).png"))
+            // Text pasted from another app (white, big) must come out in the note's own ink.
+            if let tv = findTextView(window.contentView) as? NoteTextView {
+                let pb = NSPasteboard(name: NSPasteboard.Name("dayline-shots-\(mode)"))
+                pb.clearContents()
+                let white = NSAttributedString(string: " Pasted white text.", attributes: [.foregroundColor: NSColor.white, .font: NSFont.boldSystemFont(ofSize: 28)])
+                pb.setData(white.rtf(from: NSRange(location: 0, length: white.length)), forType: .rtf)
+                tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+                _ = tv.readSelection(from: pb, type: .rtf)
+                try? await Task.sleep(for: .seconds(0.8))
+                report(dir, "paste-\(mode)", tv)
+                pb.releaseGlobally()
+            }
+            // Every kind of block, with the table of contents open.
+            var showcase = Note(id: 0, title: "Launch plan")
+            showcase.category = "work/launch"
+            showcase.body = "<p><span style=\"font-size: 21.0px;\"><b>Goals</b></span></p><p>Ship the <b>new editor</b> with <span style=\"color: rgba(26, 115, 232, 1.0);\">colours</span> and <span style=\"color: rgba(31, 31, 31, 1.0); background: rgba(255, 241, 118, 1.0);\">highlights</span>. See [[Release notes]].</p>"
+                + "<ul><li>Bulleted item<ul><li>Nested item</li></ul></li></ul><ol><li>First</li><li>Second</li></ol><p>\u{2610} Write the changelog</p><p>\u{2611}\u{FE0E} Test both themes</p>"
+                + "<blockquote><p>Simple things should be simple.</p></blockquote><div class=\"callout\" data-kind=\"tip\"><p>Press Tab in a table to move to the next cell.</p></div>"
+                + "<pre><code class=\"language-swift\">let note = Note(title: \"Hello\")\nprint(note)</code></pre>"
+                + "<table><tr><th>Platform</th><th>Version</th></tr><tr><td>Android</td><td>1.1.4</td></tr><tr><td>Mac</td><td>1.3.2</td></tr></table><hr><p><span style=\"font-size: 18.0px; font-weight: 600;\">Next</span></p><p>Done.</p>"
+            let sid = s.store.save(showcase)
+            s.notesUI.layout = 3
+            s.notesUI.filter = .all
+            s.notesUI.open(sid)
+            s.notesUI.panel = .contents
+            try? await Task.sleep(for: .seconds(1.6))
+            capture(window, dir.appendingPathComponent("noteblocks-\(mode).png"))
+            if let tv = findTextView(window.contentView) { report(dir, "noteblocks-\(mode)", tv) }
+            s.notesUI.panel = nil
+            // A locked note, and the Trash.
+            s.store.setLocked(note: sid, true)
+            s.notesUI.open(sid)
+            try? await Task.sleep(for: .seconds(1.0))
+            capture(window, dir.appendingPathComponent("notelocked-\(mode).png"))
+            s.store.setLocked(note: sid, false)
+            s.store.trashNote(sid)
+            s.notesUI.filter = .trash
+            s.notesUI.open(sid)
+            try? await Task.sleep(for: .seconds(1.2))
+            capture(window, dir.appendingPathComponent("notetrash-\(mode).png"))
+            s.store.deleteNote(sid)
+            s.notesUI.filter = .all
+            s.notesUI.close()
             // Journal entry open
             s.nav.go(.journal)
             if let id = s.store.journalEntries.first?.id { s.journalUI.open(id) }
@@ -103,6 +161,37 @@ enum ScreenshotMode {
             saved.createdAt = day.date(at: TimeOfDay(hour: 9, minute: 0)); s.store.save(saved)
         }
         s.nav.go(.journal); s.journalUI.open(id); await shot("journal")
+    }
+
+    static func findTextView(_ v: NSView?) -> NSTextView? {
+        guard let v else { return nil }
+        if let tv = v as? NoteTextView { return tv }
+        for sub in v.subviews { if let f = findTextView(sub) { return f } }
+        return nil
+    }
+
+    /// Writes the colours the note text really draws with, so a test can fail on unreadable text.
+    static func report(_ dir: URL, _ name: String, _ tv: NSTextView) {
+        var lines = ["text: \(tv.string)"]
+        func describe(_ c: Any?) -> String {
+            guard let c = c as? NSColor else { return "none" }
+            var out = "\(c)"
+            tv.effectiveAppearance.performAsCurrentDrawingAppearance {
+                if let rgb = c.usingColorSpace(.sRGB) { out += String(format: " → rgb(%.2f, %.2f, %.2f)", rgb.redComponent, rgb.greenComponent, rgb.blueComponent) }
+            }
+            return out
+        }
+        let s = tv.textStorage!
+        var i = 0
+        while i < s.length {
+            var r = NSRange()
+            let c = s.attribute(.foregroundColor, at: i, effectiveRange: &r)
+            lines.append("run \(r.location)+\(r.length): \(describe(c))")
+            i = r.location + max(1, r.length)
+        }
+        lines.append("typing: \(describe(tv.typingAttributes[.foregroundColor]))")
+        lines.append("appearance: \(tv.effectiveAppearance.name.rawValue)")
+        try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("\(name).txt"), atomically: true, encoding: .utf8)
     }
 
     static func capture(_ window: NSWindow, _ url: URL) {

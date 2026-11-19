@@ -135,7 +135,11 @@ struct DaylineApp: App {
                 .environmentObject(services.updater)
         }
         .defaultSize(width: 1180, height: 780)
-        .commands { DaylineCommands(services: services) }
+        .commands {
+            DaylineCommands(services: services)
+            NotesCommands(services: services)
+            TextEditingCommands()
+        }
 
         Settings {
             SettingsView()

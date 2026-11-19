@@ -20,11 +20,12 @@ data class NoteBody(val html: String, val checklist: List<CheckItem> = emptyList
 object NoteCodec {
     private const val START = "<!--dl-checklist"
     private const val END = "-->"
-    private val tagHint = Regex("<(p|br|b|i|u|s|em|strong|span|ol|ul|li|h[1-6]|div|mark)[\\s>/]", RegexOption.IGNORE_CASE)
+    private val tagHint = Regex("<(p|br|b|i|u|s|em|strong|span|ol|ul|li|h[1-6]|div|mark|blockquote|pre|code|hr|table|a)[\\s>/]", RegexOption.IGNORE_CASE)
 
     fun isHtml(s: String): Boolean = tagHint.containsMatchIn(s)
 
-    private val hashtag = Regex("(?<![\\p{L}\\p{N}_&#/])#([\\p{L}\\p{N}_-]{1,32})")
+    /** #tag, or a nested #tag/inside/another (up to six levels). */
+    private val hashtag = Regex("(?<![\\p{L}\\p{N}_&#/])#([\\p{L}\\p{N}_-]{1,32}(?:/[\\p{L}\\p{N}_-]{1,32}){0,5})")
 
     /**
      * Finished #words in [text] — followed by a space or line break (or anywhere when [all]) — as
@@ -109,7 +110,9 @@ object NoteCodec {
         var s = decoded.html
         if (isHtml(s)) {
             s = s.replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-                .replace(Regex("</(p|li|h[1-6]|div)>", RegexOption.IGNORE_CASE), "\n")
+                .replace(Regex("<hr\\s*/?>", RegexOption.IGNORE_CASE), "\n———\n")
+                .replace(Regex("</t[hd]>", RegexOption.IGNORE_CASE), "  ")
+                .replace(Regex("(?:</(?:p|li|h[1-6]|div|blockquote|pre|tr)>\\s*)+", RegexOption.IGNORE_CASE), "\n")
                 .replace(Regex("<[^>]+>"), "")
                 .let(::decodeEntities)
         }

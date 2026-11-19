@@ -89,7 +89,7 @@ class TaskRepository @Inject constructor(
             dependents = taskDao.getDependencies().filter { it.dependsOnTaskId == taskId }.mapNotNull { byId[it.taskId]?.task },
             attachments = taskDao.getAttachments(taskId).map { it.toModel() },
             reminders = reminders.filter { it.taskId == taskId }.map { it.toModel() },
-            notes = notes.filter { it.taskId == taskId }.map { it.toModel() },
+            notes = notes.filter { it.taskId == taskId && it.trashedAt == null }.map { it.toModel() },
             project = item.project,
             list = item.list,
         )

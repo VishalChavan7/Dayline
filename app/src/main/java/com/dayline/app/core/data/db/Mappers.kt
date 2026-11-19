@@ -62,8 +62,8 @@ fun Habit.toEntity() = HabitEntity(
 
 fun HabitCompletionEntity.toModel() = HabitCompletion(habitId, date, count)
 
-fun NoteEntity.toModel() = Note(id, title, body, category, isPinned, taskId, projectId, color, createdAt, updatedAt)
-fun Note.toEntity() = NoteEntity(id, title.trim(), body, category?.takeIf { it.isNotBlank() }, isPinned, taskId, projectId, color, createdAt, updatedAt)
+fun NoteEntity.toModel() = Note(id, title, body, category, isPinned, taskId, projectId, color, createdAt, updatedAt, archivedAt, trashedAt, locked)
+fun Note.toEntity() = NoteEntity(id, title.trim(), body, category?.takeIf { it.isNotBlank() }, isPinned, taskId, projectId, color, createdAt, updatedAt, archivedAt, trashedAt, locked)
 
 fun FocusSessionEntity.toModel() = FocusSession(id, startedAt, endedAt, focusedMillis, plannedMillis, taskId, projectId, completed)
 fun FocusSession.toEntity() = FocusSessionEntity(id, startedAt, endedAt, focusedMillis, plannedMillis, taskId, projectId, completed)

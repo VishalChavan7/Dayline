@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
+import java.time.Instant
 import java.time.LocalDate
 
 @Dao
@@ -231,7 +232,20 @@ interface NoteDao {
     @Query("UPDATE notes SET isPinned = :pinned WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean)
 
-    @Query("SELECT * FROM notes WHERE title LIKE '%' || :q || '%' OR body LIKE '%' || :q || '%' OR category LIKE '%' || :q || '%' ORDER BY updatedAt DESC LIMIT 50")
+    // These also move updatedAt, so a sync carries the change over an older edit from the other device.
+    @Query("UPDATE notes SET archivedAt = :at, updatedAt = :now WHERE id = :id")
+    suspend fun setArchived(id: Long, at: Instant?, now: Instant)
+
+    @Query("UPDATE notes SET trashedAt = :at, updatedAt = :now WHERE id = :id")
+    suspend fun setTrashed(id: Long, at: Instant?, now: Instant)
+
+    @Query("UPDATE notes SET locked = :locked, updatedAt = :now WHERE id = :id")
+    suspend fun setLocked(id: Long, locked: Boolean, now: Instant)
+
+    @Query("DELETE FROM notes WHERE trashedAt IS NOT NULL")
+    suspend fun emptyTrash(): Int
+
+    @Query("SELECT * FROM notes WHERE trashedAt IS NULL AND (title LIKE '%' || :q || '%' OR (locked = 0 AND body LIKE '%' || :q || '%') OR category LIKE '%' || :q || '%') ORDER BY updatedAt DESC LIMIT 50")
     suspend fun search(q: String): List<NoteEntity>
 }
 

@@ -107,7 +107,9 @@ class BackupManager @Inject constructor(
         root.put("notes", arr(db.noteDao().getAll()) { e ->
             obj("id" to e.id, "title" to e.title, "body" to e.body, "category" to e.category, "isPinned" to e.isPinned,
                 "taskId" to e.taskId, "projectId" to e.projectId, "color" to e.color,
-                "createdAt" to e.createdAt.toEpochMilli(), "updatedAt" to e.updatedAt.toEpochMilli())
+                "createdAt" to e.createdAt.toEpochMilli(), "updatedAt" to e.updatedAt.toEpochMilli(),
+                // Only written when set, so notes from before 1.1.4 look the same to a sync.
+                "archivedAt" to e.archivedAt?.toEpochMilli(), "trashedAt" to e.trashedAt?.toEpochMilli(), "locked" to e.locked.takeIf { it })
         })
         root.put("focusSessions", arr(db.focusDao().getAll()) { e ->
             obj("startedAt" to e.startedAt.toEpochMilli(), "endedAt" to e.endedAt.toEpochMilli(), "focusedMillis" to e.focusedMillis,
@@ -234,7 +236,8 @@ class BackupManager @Inject constructor(
         val notes = list(root, "notes") { o ->
             NoteEntity(o.getLong("id"), o.optString("title"), o.optString("body"), o.optStringOrNull("category"), o.optBoolean("isPinned"),
                 o.optLongOrNull("taskId")?.takeIf { it in taskIds }, o.optLongOrNull("projectId")?.takeIf { it in projectIds }, o.optInt("color"),
-                inst(o, "createdAt") ?: Instant.EPOCH, inst(o, "updatedAt") ?: Instant.EPOCH)
+                inst(o, "createdAt") ?: Instant.EPOCH, inst(o, "updatedAt") ?: Instant.EPOCH,
+                inst(o, "archivedAt"), inst(o, "trashedAt"), o.optBoolean("locked"))
         }
         val focus = list(root, "focusSessions") { o ->
             FocusSessionEntity(0, Instant.ofEpochMilli(o.getLong("startedAt")), Instant.ofEpochMilli(o.getLong("endedAt")), o.getLong("focusedMillis"),

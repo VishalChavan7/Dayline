@@ -23,8 +23,8 @@ public enum NoteCodec {
     public static let checkOpen = "\u{2610} ", checkDone = "\u{2611}\u{FE0E} "
 
     static func re(_ p: String, _ o: NSRegularExpression.Options = []) -> NSRegularExpression { try! NSRegularExpression(pattern: p, options: o) }
-    static let tagHint = re("<(p|br|b|i|u|s|em|strong|span|ol|ul|li|h[1-6]|div|mark)[\\s>/]", .caseInsensitive)
-    static let hashtag = re("(?<![\\p{L}\\p{N}_&#/])#([\\p{L}\\p{N}_-]{1,32})")
+    static let tagHint = re("<(p|br|b|i|u|s|em|strong|span|ol|ul|li|h[1-6]|div|mark|blockquote|pre|code|hr|table|a)[\\s>/]", .caseInsensitive)
+    static let hashtag = re("(?<![\\p{L}\\p{N}_&#/])#([\\p{L}\\p{N}_-]{1,32}(?:/[\\p{L}\\p{N}_-]{1,32}){0,5})")
     static let block = re("<(p|li|h[1-6])(\\s[^>]*)?>(.*?)</\\1>|<br\\s*/?>", [.dotMatchesLineSeparators, .caseInsensitive])
 
     public static func isHtml(_ s: String) -> Bool { tagHint.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil }
@@ -98,7 +98,9 @@ public enum NoteCodec {
         var s = d.html
         if isHtml(s) {
             s = s.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: [.regularExpression, .caseInsensitive])
-                .replacingOccurrences(of: "</(p|li|h[1-6]|div)>", with: "\n", options: [.regularExpression, .caseInsensitive])
+                .replacingOccurrences(of: "<hr\\s*/?>", with: "\n———\n", options: [.regularExpression, .caseInsensitive])
+                .replacingOccurrences(of: "</t[hd]>", with: "  ", options: [.regularExpression, .caseInsensitive])
+                .replacingOccurrences(of: "(?:</(?:p|li|h[1-6]|div|blockquote|pre|tr)>\\s*)+", with: "\n", options: [.regularExpression, .caseInsensitive])
                 .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             s = decodeEntities(s)
         }
@@ -153,6 +155,12 @@ public enum NoteCodec {
             last = r.upperBound
         }
         return out + text[last...]
+    }
+
+    /// Plain text of one block's inner HTML.
+    public static func blockText(_ inner: String) -> String {
+        decodeEntities(inner.replacingOccurrences(of: "<br\\s*/?>", with: " ", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Paragraphs of the note's HTML with their plain text, so the Mac editor can show in-text checklist lines.

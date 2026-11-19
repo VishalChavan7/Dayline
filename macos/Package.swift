@@ -11,8 +11,10 @@ let package = Package(
     targets: [
         // Data model, sync file format and all the rules (repeats, streaks, stats, quick add, focus timer).
         .target(name: "DaylineCore", path: "Sources/DaylineCore"),
+        // The note editor's text engine (AppKit): HTML in and out, blocks, and every formatting command.
+        .target(name: "DaylineEditor", dependencies: ["DaylineCore"], path: "Sources/DaylineEditor"),
         // The SwiftUI app.
-        .executableTarget(name: "Dayline", dependencies: ["DaylineCore"], path: "Sources/Dayline"),
+        .executableTarget(name: "Dayline", dependencies: ["DaylineCore", "DaylineEditor"], path: "Sources/Dayline"),
         // Desktop widgets (bundled into Dayline.app as a WidgetKit extension by build.sh).
         .executableTarget(name: "DaylineWidgets", dependencies: ["DaylineCore"], path: "Sources/DaylineWidgets",
                           swiftSettings: [.unsafeFlags(["-application-extension", "-emit-const-values",
@@ -20,6 +22,6 @@ let package = Package(
                                                          "-Xfrontend", root + "/Resources/AppIntentsProtocols.json"])],
                           linkerSettings: [.linkedFramework("AppIntents"), .linkedFramework("WidgetKit"), .unsafeFlags(["-Xlinker", "-application_extension", "-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]),
         // Self-checks for DaylineCore (runs without Xcode's XCTest).
-        .executableTarget(name: "DaylineChecks", dependencies: ["DaylineCore"], path: "Sources/DaylineChecks"),
+        .executableTarget(name: "DaylineChecks", dependencies: ["DaylineCore", "DaylineEditor"], path: "Sources/DaylineChecks"),
     ]
 )

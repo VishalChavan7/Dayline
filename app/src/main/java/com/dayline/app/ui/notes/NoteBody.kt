@@ -29,27 +29,49 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.Dp
 import com.dayline.app.core.domain.CheckItem
 import com.dayline.app.core.domain.NoteCodec
+import com.dayline.app.core.domain.NoteFormat
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
 
 /**
- * A note's body as an ordered list of blocks: formatted text, and checklists that sit between
- * the text exactly where they were made (shown with the same checklist rows as everywhere else).
- * Stored as one HTML document, with checklist lines kept in place as box-prefixed paragraphs.
+ * A note's body as an ordered list of blocks: formatted text, checklists that sit between the text
+ * exactly where they were made, and quotes, callouts, code blocks, tables and dividers.
+ * Stored as one HTML document (see [NoteFormat]); checklist lines stay box-prefixed paragraphs.
  */
 @Stable
 class NoteBodyModel {
     sealed interface Seg { val key: Long }
-    class TextSeg(override val key: Long, val rich: RichTextState) : Seg {
-        val focus = FocusRequester()
+    /** A block you type formatted text into (plain text, or inside a quote or callout). */
+    sealed interface RichSeg : Seg {
+        val rich: RichTextState
+        val focus: FocusRequester
+    }
+    class TextSeg(override val key: Long, override val rich: RichTextState) : RichSeg {
+        override val focus = FocusRequester()
+    }
+    /** A quote ([kind] "quote") or a callout ("callout:tip" …), with formatted text inside. */
+    class QuoteSeg(override val key: Long, kind: String, override val rich: RichTextState) : RichSeg {
+        override val focus = FocusRequester()
+        var kind by mutableStateOf(kind)
+        val calloutKind: String? get() = kind.takeIf { it.startsWith("callout:") }?.removePrefix("callout:")
     }
     class CheckSeg(override val key: Long, items: List<EditCheck>) : Seg {
         val items = mutableStateListOf<EditCheck>().apply { addAll(items) }
     }
+    class CodeSeg(override val key: Long, text: String, language: String) : Seg {
+        var text by mutableStateOf(text)
+        var language by mutableStateOf(language)
+    }
+    class TableSeg(override val key: Long, rows: List<List<String>>, header: Boolean) : Seg {
+        val rows = mutableStateListOf<List<String>>().apply { addAll(rows) }
+        var header by mutableStateOf(header)
+        val columns: Int get() = rows.maxOfOrNull { it.size } ?: 1
+    }
+    class DividerSeg(override val key: Long) : Seg
 
     val segments = mutableStateListOf<Seg>()
-    /** The text block the formatting bar acts on (the last one focused). */
-    var active by mutableStateOf<TextSeg?>(null)
+    /** The formatted-text block the formatting bar acts on (the last one focused). */
+    var active by mutableStateOf<RichSeg?>(null)
     /** A text block that should take focus once it's on screen (caret at its end, or start). */
     var focusTarget by mutableStateOf<Long?>(null)
     var focusAtStart = false
@@ -61,13 +83,15 @@ class NoteBodyModel {
         segments += newText("")
     }
 
-    private fun newText(html: String): TextSeg {
+    private fun richOf(html: String): RichTextState {
         val r = compactRichTextState()
         if (html.isNotBlank()) {
             if (NoteCodec.isHtml(html)) r.setHtml(withExplicitAlignment(html)) else r.setText(html)
         }
-        return TextSeg(nextKey++, r)
+        return r
     }
+
+    private fun newText(html: String) = TextSeg(nextKey++, richOf(html))
 
     private fun newChecks(items: List<CheckItem>) = CheckSeg(nextKey++, items.map { EditCheck(nextCheck++, it.text, it.done) })
 
@@ -76,15 +100,24 @@ class NoteBodyModel {
         if (!NoteCodec.isHtml(html)) {
             segments += newText(html)
         } else {
-            NoteCodec.splitChecklists(html).forEach { part ->
-                segments += when (part) {
-                    is NoteCodec.BodyPart.Html -> newText(part.html)
-                    is NoteCodec.BodyPart.Checks -> newChecks(part.items)
+            NoteFormat.split(html).forEach { b ->
+                when (b) {
+                    is NoteFormat.Block.Rich -> NoteCodec.splitChecklists(b.html).forEach { part ->
+                        segments += when (part) {
+                            is NoteCodec.BodyPart.Html -> newText(part.html)
+                            is NoteCodec.BodyPart.Checks -> newChecks(part.items)
+                        }
+                    }
+                    is NoteFormat.Block.Quote -> segments += QuoteSeg(nextKey++, "quote", richOf(b.html))
+                    is NoteFormat.Block.Callout -> segments += QuoteSeg(nextKey++, "callout:" + b.kind, richOf(b.html))
+                    is NoteFormat.Block.Code -> segments += CodeSeg(nextKey++, b.text, b.language)
+                    is NoteFormat.Block.Table -> segments += TableSeg(nextKey++, b.rows, b.header)
+                    NoteFormat.Block.Divider -> segments += DividerSeg(nextKey++)
                 }
             }
         }
-        if (segments.none { it is TextSeg }) segments.add(0, newText(""))
-        active = segments.firstOrNull { it is TextSeg } as TextSeg?
+        ensureText()
+        active = segments.firstOrNull { it is RichSeg } as RichSeg?
     }
 
     val firstText: TextSeg get() = (segments.firstOrNull { it is TextSeg } as TextSeg?) ?: TextSeg(-1, compactRichTextState())
@@ -93,21 +126,32 @@ class NoteBodyModel {
     fun toHtml(): String = segments.joinToString("") { s ->
         when (s) {
             is TextSeg -> if (s.rich.toText().isBlank() && segments.size > 1) "" else s.rich.toHtml()
+            is QuoteSeg -> {
+                val inner = if (s.rich.toText().isBlank()) "" else s.rich.toHtml()
+                s.calloutKind?.let { NoteFormat.blockHtml(NoteFormat.Block.Callout(it, inner)) } ?: NoteFormat.blockHtml(NoteFormat.Block.Quote(inner))
+            }
             is CheckSeg -> NoteCodec.checksHtml(s.items.map { CheckItem(it.text, it.done) })
+            is CodeSeg -> NoteFormat.blockHtml(NoteFormat.Block.Code(s.text, s.language))
+            is TableSeg -> NoteFormat.blockHtml(NoteFormat.Block.Table(s.rows.map { r -> r + List(s.columns - r.size) { "" } }, s.header))
+            is DividerSeg -> "<hr>"
         }
     }
 
     fun isBlank(): Boolean = segments.all { s ->
         when (s) {
             is TextSeg -> s.rich.toText().isBlank()
+            is QuoteSeg -> s.rich.toText().isBlank()
             is CheckSeg -> s.items.all { it.text.isBlank() }
+            is CodeSeg -> s.text.isBlank()
+            is TableSeg -> s.rows.all { r -> r.all { it.isBlank() } }
+            is DividerSeg -> false
         }
     }
 
     /** Turns every unfinished "#label" line into a label (used when the note is saved). */
     fun liftTagLines(): List<String> {
         val out = mutableListOf<String>()
-        segments.filterIsInstance<TextSeg>().forEach { seg ->
+        segments.filterIsInstance<RichSeg>().forEach { seg ->
             var ranges = seg.rich.paragraphRanges()
             for (k in ranges.indices.reversed()) {
                 seg.rich.liftTagLine(k, ranges)?.let { out += it; ranges = seg.rich.paragraphRanges() }
@@ -119,16 +163,16 @@ class NoteBodyModel {
     /** Reads everything that can change, for undo snapshots. */
     fun signature(): List<Any> = segments.map { s ->
         when (s) {
-            is TextSeg -> s.rich.annotatedString
+            is RichSeg -> listOf(s.rich.annotatedString, (s as? QuoteSeg)?.kind.orEmpty())
             is CheckSeg -> s.items.toList()
+            is CodeSeg -> listOf(s.text, s.language)
+            is TableSeg -> listOf(s.rows.toList(), s.header)
+            is DividerSeg -> s.key
         }
     }
 
-    /**
-     * The selected lines (or the line with the caret) of [seg] become a checklist right where they
-     * are: the text block splits around them.
-     */
-    fun convertToChecklist(seg: TextSeg) {
+    /** The paragraphs of [seg] that are selected (or the one with the caret), as block indexes. */
+    private fun pickedBlocks(seg: RichSeg): Pair<IntRange, List<MatchResult>>? {
         val rich = seg.rich
         val ranges = rich.paragraphRanges()
         val sel = rich.selection
@@ -136,28 +180,158 @@ class NoteBodyModel {
             if (sel.collapsed) listOf(ranges.indexOf(rich.paragraphAt(sel.min)))
             else ranges.indices.filter { i -> ranges[i].first < sel.max && ranges[i].last + 1 > sel.min }
             ).filter { it >= 0 }
-        val html = rich.toHtml()
-        val blocks = NoteCodec.blocks(html)
-        if (picked.isEmpty() || blocks.isEmpty()) return
-        val first = picked.first().coerceAtMost(blocks.lastIndex)
-        val last = picked.last().coerceAtMost(blocks.lastIndex)
-        val before = html.substring(0, blocks[first].range.first)
-        val after = html.substring(blocks[last].range.last + 1)
-        val items = (first..last).map { NoteCodec.blockText(blocks[it].groupValues[3]).replace(LIST_MARK, "").trim() }
-            .filter { it.isNotEmpty() }
-            .ifEmpty { listOf("") }
+        val blocks = NoteCodec.blocks(rich.toHtml())
+        if (picked.isEmpty() || blocks.isEmpty()) return null
+        return picked.first().coerceAtMost(blocks.lastIndex)..picked.last().coerceAtMost(blocks.lastIndex) to blocks
+    }
+
+    /**
+     * The selected lines (or the line with the caret) of [seg] are replaced by what [make] builds from
+     * them, right where they are: the text block splits around them.
+     */
+    private fun convertLines(seg: TextSeg, make: (htmls: List<String>, texts: List<String>) -> Seg): Seg? {
+        val (picked, blocks) = pickedBlocks(seg) ?: return null
+        val html = seg.rich.toHtml()
+        val before = html.substring(0, blocks[picked.first].range.first)
+        val after = html.substring(blocks[picked.last].range.last + 1)
+        val htmls = picked.map { i -> blocks[i].value.replace(LI_OPEN, "<p>").replace(LI_CLOSE, "</p>") }
+        val texts = picked.map { i -> NoteCodec.blockText(blocks[i].groupValues[3]).replace(LIST_MARK, "").trimEnd() }
         val at = segments.indexOf(seg)
-        if (at < 0) return
+        if (at < 0) return null
+        val made = make(htmls, texts)
         val replacement = buildList {
             if (NoteCodec.blockText(before).isNotEmpty()) add(newText(before))
-            add(newChecks(items.map { CheckItem(it) }))
+            add(made)
             if (NoteCodec.blockText(after).isNotEmpty()) add(newText(after))
         }
         segments.removeAt(at)
         segments.addAll(at, replacement)
-        mergeChecklists()
-        ensureText()
-        active = (segments.getOrNull(at + replacement.size - 1) as? TextSeg) ?: segments.filterIsInstance<TextSeg>().lastOrNull()
+        tidy()
+        return made
+    }
+
+    /**
+     * The selected lines (or the line with the caret) of [seg] become a checklist right where they
+     * are: the text block splits around them.
+     */
+    fun convertToChecklist(seg: RichSeg) {
+        if (seg !is TextSeg) return
+        val made = convertLines(seg) { _, texts ->
+            newChecks(texts.map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf("") }.map { CheckItem(it) })
+        } ?: return
+        val i = segments.indexOf(made)
+        active = (segments.getOrNull(i + 1) as? RichSeg) ?: segments.filterIsInstance<RichSeg>().lastOrNull()
+    }
+
+    /** Wraps the selected lines in a quote or callout (`"quote"`, `"callout:tip"`); in one already, changes or removes it. */
+    fun toggleQuote(seg: RichSeg, kind: String) {
+        when (seg) {
+            is QuoteSeg -> if (seg.kind == kind) unwrap(seg) else seg.kind = kind
+            is TextSeg -> {
+                val made = convertLines(seg) { htmls, _ -> QuoteSeg(nextKey++, kind, richOf(htmls.joinToString(""))) } as? QuoteSeg ?: return
+                focusOn(made, atStart = false)
+            }
+        }
+    }
+
+    /** The selected lines become a code block (plain text). */
+    fun makeCode(seg: RichSeg) {
+        if (seg is QuoteSeg) { unwrap(seg); return }
+        convertLines(seg as TextSeg) { _, texts -> CodeSeg(nextKey++, texts.joinToString("\n"), "") }
+    }
+
+    /** A table or divider goes after the line with the caret (splitting the text there). */
+    fun insertAfterCaret(seg: RichSeg?, make: () -> Seg): Seg {
+        val made = make()
+        val target = seg ?: active
+        val at = segments.indexOfFirst { it === target }
+        if (target !is TextSeg || at < 0) {
+            val i = if (at >= 0) at + 1 else segments.size
+            segments.add(i, made)
+        } else {
+            val picked = pickedBlocks(target)
+            val html = target.rich.toHtml()
+            if (picked == null || target.rich.toText().isBlank()) {
+                segments.add(at + 1, made)
+            } else {
+                val (range, blocks) = picked
+                val cut = blocks[range.last].range.last + 1
+                val before = html.substring(0, cut)
+                val after = html.substring(cut)
+                segments.removeAt(at)
+                segments.addAll(at, buildList {
+                    add(newText(before))
+                    add(made)
+                    if (NoteCodec.blockText(after).isNotEmpty()) add(newText(after))
+                })
+            }
+        }
+        tidy()
+        return made
+    }
+
+    fun insertTable(seg: RichSeg?, rows: Int = 3, columns: Int = 3): TableSeg =
+        insertAfterCaret(seg) { TableSeg(nextKey++, List(rows) { List(columns) { "" } }, true) } as TableSeg
+
+    fun insertDivider(seg: RichSeg?) { insertAfterCaret(seg) { DividerSeg(nextKey++) } }
+
+    /** Takes a block apart back into ordinary text (a divider just goes). */
+    fun unwrap(seg: Seg) {
+        val at = segments.indexOf(seg)
+        if (at < 0) return
+        val text: TextSeg? = when (seg) {
+            is QuoteSeg -> newText(seg.rich.toHtml())
+            // Leading spaces are kept as non-breaking spaces (HTML would collapse them).
+            is CodeSeg -> newText(seg.text.split("\n").joinToString("") { line ->
+                if (line.isEmpty()) "<br>" else "<p>" + NoteCodec.escape(line).replace(Regex("^ +")) { m -> "&nbsp;".repeat(m.value.length) } + "</p>"
+            })
+            is TableSeg -> newText(seg.rows.joinToString("") { r -> "<p>" + NoteCodec.escape(r.joinToString(" · ")) + "</p>" })
+            else -> null
+        }
+        segments.removeAt(at)
+        if (text != null) segments.add(at, text)
+        tidy()
+        text?.let { focusOn(it, atStart = false) }
+    }
+
+    fun remove(seg: Seg) {
+        segments.remove(seg)
+        tidy()
+    }
+
+    // Tables
+    fun setCell(t: TableSeg, row: Int, col: Int, text: String) {
+        val r = t.rows.getOrNull(row) ?: return
+        t.rows[row] = (r + List((col + 1 - r.size).coerceAtLeast(0)) { "" }).toMutableList().also { it[col] = text.replace("\n", " ") }
+    }
+    fun addRow(t: TableSeg, after: Int = t.rows.lastIndex) { t.rows.add((after + 1).coerceIn(0, t.rows.size), List(t.columns) { "" }) }
+    fun addColumn(t: TableSeg, after: Int = t.columns - 1) {
+        val cols = t.columns
+        for (i in t.rows.indices) {
+            val r = t.rows[i] + List(cols - t.rows[i].size) { "" }
+            t.rows[i] = r.toMutableList().apply { add((after + 1).coerceIn(0, size), "") }
+        }
+    }
+    fun deleteRow(t: TableSeg, row: Int) { if (t.rows.size > 1) t.rows.removeAt(row.coerceIn(0, t.rows.lastIndex)) else remove(t) }
+    fun deleteColumn(t: TableSeg, col: Int) {
+        if (t.columns <= 1) { remove(t); return }
+        for (i in t.rows.indices) t.rows[i] = t.rows[i].toMutableList().apply { if (col in indices) removeAt(col) }
+    }
+
+    /** Moves the line with the caret up or down within its text block. */
+    fun moveLine(seg: RichSeg, up: Boolean) {
+        val rich = seg.rich
+        val html = rich.toHtml()
+        val blocks = NoteCodec.blocks(html)
+        val ranges = rich.paragraphRanges()
+        val k = ranges.indexOf(rich.paragraphAt(rich.selection.min))
+        val j = if (up) k - 1 else k + 1
+        if (k !in blocks.indices || j !in blocks.indices) return
+        val (a, b) = if (k < j) blocks[k] to blocks[j] else blocks[j] to blocks[k]
+        val swapped = html.substring(0, a.range.first) + b.value + html.substring(a.range.last + 1, b.range.first) + a.value + html.substring(b.range.last + 1)
+        rich.setHtml(withExplicitAlignment(swapped))
+        val now = rich.paragraphRanges()
+        now.getOrNull(j)?.let { rich.selection = TextRange((it.last + 1).coerceAtMost(rich.annotatedString.text.length)) }
     }
 
     fun addCheck(seg: CheckSeg, after: Long?): Long {
@@ -181,41 +355,104 @@ class NoteBodyModel {
         seg.items.removeAll { it.key == key }
         if (seg.items.isEmpty()) {
             segments.remove(seg)
-            ensureText()
+            tidy()
         }
     }
 
-    /** Puts the caret at the end of the note, adding a text block after a closing checklist. */
+    private fun focusOn(seg: RichSeg, atStart: Boolean) {
+        active = seg
+        focusAtStart = atStart
+        focusTarget = seg.key
+    }
+
+    /** Puts the caret at the end of the note, adding a text block after a closing block. */
     fun focusEnd() {
         val last = segments.lastOrNull()
         val target = if (last is TextSeg) last else newText("").also { segments += it }
-        focusAtStart = false
-        focusTarget = target.key
+        focusOn(target, atStart = false)
     }
 
-    /** Carries on writing right below a checklist (Enter on its empty last item). */
+    /** Carries on writing right below a block (Enter on a checklist's empty last item). */
     fun focusAfter(seg: Seg) {
         val i = segments.indexOf(seg)
         val next = segments.getOrNull(i + 1)
         val target = if (next is TextSeg) next else newText("").also { segments.add(if (i >= 0) i + 1 else segments.size, it) }
-        focusAtStart = true
-        focusTarget = target.key
+        focusOn(target, atStart = true)
     }
 
-    private fun mergeChecklists() {
+    /** Joins neighbouring checklists and text blocks, and keeps a text block to type in. */
+    private fun tidy() {
         var i = 0
         while (i < segments.size - 1) {
             val a = segments[i]; val b = segments[i + 1]
-            if (a is CheckSeg && b is CheckSeg) { a.items.addAll(b.items); segments.removeAt(i + 1) } else i++
+            when {
+                a is CheckSeg && b is CheckSeg -> { a.items.addAll(b.items); segments.removeAt(i + 1) }
+                a is TextSeg && b is TextSeg -> {
+                    val html = listOf(a, b).filter { it.rich.toText().isNotBlank() }.joinToString("") { it.rich.toHtml() }
+                    val merged = newText(html)
+                    segments[i] = merged; segments.removeAt(i + 1)
+                    if (active === a || active === b) active = merged
+                }
+                else -> i++
+            }
         }
+        ensureText()
+        if (active != null && segments.none { it === active }) active = segments.filterIsInstance<RichSeg>().firstOrNull()
     }
 
     private fun ensureText() {
         if (segments.none { it is TextSeg }) segments.add(0, newText(""))
     }
 
+    /** Every place [query] appears in the note's formatted text (case ignored). */
+    data class Match(val seg: RichSeg, val range: TextRange)
+    fun find(query: String): List<Match> {
+        if (query.isEmpty()) return emptyList()
+        return segments.filterIsInstance<RichSeg>().flatMap { seg ->
+            val t = seg.rich.annotatedString.text
+            buildList {
+                var i = t.indexOf(query, ignoreCase = true)
+                while (i >= 0) { add(Match(seg, TextRange(i, i + query.length))); i = t.indexOf(query, i + query.length.coerceAtLeast(1), ignoreCase = true) }
+            }
+        }
+    }
+
+    fun select(m: Match) {
+        m.seg.rich.selection = m.range
+        active = m.seg
+        runCatching { m.seg.focus.requestFocus() }
+    }
+
+    fun replace(m: Match, with: String) {
+        runCatching { m.seg.rich.replaceTextRange(m.range, with) }
+    }
+
+    /** Replaces every match; returns how many. */
+    fun replaceAll(query: String, with: String): Int {
+        val all = find(query)
+        all.groupBy { it.seg }.forEach { (_, ms) -> ms.sortedByDescending { it.range.min }.forEach { replace(it, with) } }
+        return all.size
+    }
+
+    /** Replaces a misspelt word everywhere in the note (whole words only). */
+    fun replaceWord(word: String, with: String): Int {
+        var n = 0
+        val re = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(word) + "(?![\\p{L}\\p{N}])")
+        segments.filterIsInstance<RichSeg>().forEach { seg ->
+            re.findAll(seg.rich.annotatedString.text).toList().asReversed().forEach { m ->
+                runCatching { seg.rich.replaceTextRange(TextRange(m.range.first, m.range.last + 1), with); n++ }
+            }
+        }
+        return n
+    }
+
+    /** All the note's text, for statistics and spell checking. */
+    fun plainText(): String = NoteCodec.plainText(toHtml())
+
     private companion object {
         val LIST_MARK = Regex("^(\\d+\\. |[•◦▪] )")
+        val LI_OPEN = Regex("^<li(\\s[^>]*)?>", RegexOption.IGNORE_CASE)
+        val LI_CLOSE = Regex("</li>$", RegexOption.IGNORE_CASE)
     }
 }
 
@@ -226,12 +463,13 @@ class NoteBodyModel {
 @Composable
 internal fun TextSegmentEditor(
     body: NoteBodyModel,
-    seg: NoteBodyModel.TextSeg,
+    seg: NoteBodyModel.RichSeg,
     style: TextStyle,
     minHeight: Dp,
     placeholder: String?,
     onAddLabels: (List<String>) -> Unit,
     modifier: Modifier = Modifier,
+    readOnly: Boolean = false,
 ) {
     val rich = seg.rich
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -290,6 +528,7 @@ internal fun TextSegmentEditor(
 
     BasicRichTextEditor(
         state = rich,
+        readOnly = readOnly,
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = minHeight)

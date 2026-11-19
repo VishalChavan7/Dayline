@@ -151,7 +151,10 @@ class HabitRepository @Inject constructor(
 @Singleton
 class NoteRepository @Inject constructor(private val db: DaylineDatabase, private val time: TimeProvider) {
     private val dao = db.noteDao()
-    val notes: Flow<List<Note>> = dao.observeAll().map { l -> l.map { it.toModel() } }
+    /** Every note, including archived and trashed ones (the notes screen sorts them into views). */
+    val allNotes: Flow<List<Note>> = dao.observeAll().map { l -> l.map { it.toModel() } }
+    /** Notes that are in use: not archived, not in Trash. */
+    val notes: Flow<List<Note>> = allNotes.map { l -> l.filter { it.archivedAt == null && it.trashedAt == null } }
 
     suspend fun get(id: Long): Note? = dao.get(id)?.toModel()
 
@@ -167,8 +170,15 @@ class NoteRepository @Inject constructor(private val db: DaylineDatabase, privat
         return if (note.id != 0L) note.id else rowId
     }
 
+    /** Deletes for good. Notes normally go to Trash first ([trash]). */
     suspend fun delete(id: Long) = dao.delete(id)
     suspend fun setPinned(id: Long, pinned: Boolean) = dao.setPinned(id, pinned)
+    suspend fun archive(id: Long) = time.now().let { dao.setArchived(id, it, it) }
+    suspend fun unarchive(id: Long) = dao.setArchived(id, null, time.now())
+    suspend fun trash(id: Long) = time.now().let { dao.setTrashed(id, it, it) }
+    suspend fun restoreFromTrash(id: Long) = dao.setTrashed(id, null, time.now())
+    suspend fun emptyTrash(): Int = dao.emptyTrash()
+    suspend fun setLocked(id: Long, locked: Boolean) = dao.setLocked(id, locked, time.now())
     suspend fun restore(note: Note) { dao.upsert(note.toEntity()) }
 
     /** Renames a label on every note that has it (notes keep their "edited" time). */

@@ -63,6 +63,8 @@ public enum BackupCodec {
             "id": e.id, "title": e.title, "body": e.body, "category": e.category, "isPinned": e.isPinned,
             "taskId": e.taskId, "projectId": e.projectId, "color": e.color,
             "createdAt": e.createdAt.epochMillis, "updatedAt": e.updatedAt.epochMillis,
+            // Only written when set, so notes from older versions look the same to a sync.
+            "archivedAt": e.archivedAt?.epochMillis, "trashedAt": e.trashedAt?.epochMillis, "locked": e.locked ? true : nil,
         ]) }
         root["focusSessions"] = d.focusSessions.map { e in obj([
             "startedAt": e.startedAt.epochMillis, "endedAt": e.endedAt.epochMillis, "focusedMillis": e.focusedMillis,
@@ -205,6 +207,7 @@ public enum BackupCodec {
             n.taskId = o.long("taskId").flatMap { taskIds.contains($0) ? $0 : nil }
             n.projectId = o.long("projectId").flatMap { projectIds.contains($0) ? $0 : nil }
             n.color = o.color("color"); n.createdAt = o.instant("createdAt") ?? epoch; n.updatedAt = o.instant("updatedAt") ?? epoch
+            n.archivedAt = o.instant("archivedAt"); n.trashedAt = o.instant("trashedAt"); n.locked = o.bool("locked")
             return n
         }
         d.focusSessions = try list(root, "focusSessions") { o in

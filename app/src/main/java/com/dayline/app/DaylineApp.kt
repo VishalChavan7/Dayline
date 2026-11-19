@@ -59,7 +59,7 @@ class DaylineApp : Application(), Configuration.Provider {
                 SyncScheduler.schedulePeriodic(this@DaylineApp)
                 SyncScheduler.soon(this@DaylineApp, delaySeconds = 3)
             }
-            combine(tasks.items, habits.completions, habits.habits, notes.notes, combine(projects.projects, projects.lists, settingsRepo.settings) { a, b, c -> Triple(a, b, c) }) { _, _, _, _, _ -> Unit }
+            combine(tasks.items, habits.completions, habits.habits, notes.allNotes, combine(projects.projects, projects.lists, settingsRepo.settings) { a, b, c -> Triple(a, b, c) }) { _, _, _, _, _ -> Unit }
                 .drop(1)
                 .debounce(2_500)
                 .collect {

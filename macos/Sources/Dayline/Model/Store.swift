@@ -509,14 +509,35 @@ final class Store: ObservableObject {
         changed()
     }
 
+    /// Changes a note's state and moves its edit time, so a sync carries it over an older edit elsewhere.
+    private func updateNote(_ id: Int64, _ f: (inout Note) -> Void) {
+        guard let i = data.notes.firstIndex(where: { $0.id == id }) else { return }
+        f(&data.notes[i])
+        data.notes[i].updatedAt = now
+        changed()
+    }
+    func archiveNote(_ id: Int64) { updateNote(id) { $0.archivedAt = now } }
+    func unarchiveNote(_ id: Int64) { updateNote(id) { $0.archivedAt = nil } }
+    func trashNote(_ id: Int64) { updateNote(id) { $0.trashedAt = now } }
+    func restoreNote(_ id: Int64) { updateNote(id) { $0.trashedAt = nil } }
+    func setLocked(note id: Int64, _ locked: Bool) { updateNote(id) { $0.locked = locked } }
+    func emptyTrash() {
+        let before = data.notes.count
+        data.notes.removeAll { $0.trashedAt != nil }
+        if data.notes.count != before { changed() }
+    }
+
+    /// Notes in use: not archived, not in Trash.
+    var liveNotes: [Note] { data.notes.filter { $0.archivedAt == nil && $0.trashedAt == nil } }
+
     func labels(of n: Note) -> [String] { (n.category ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
-    var allNoteLabels: [String] { Array(Set(data.notes.filter { !isJournal($0) }.flatMap(labels(of:)))).sorted() }
+    var allNoteLabels: [String] { Array(Set(data.notes.filter { !isJournal($0) && $0.trashedAt == nil }.flatMap(labels(of:)))).sorted() }
 
     /// Journal entries are notes labelled "journal" (the same rule as on the phone).
     static let journalLabel = "journal"
     func isJournal(_ n: Note) -> Bool { labels(of: n).contains(Store.journalLabel) }
-    var journalEntries: [Note] { data.notes.filter(isJournal).sorted { $0.createdAt > $1.createdAt } }
-    var noteCount: Int { data.notes.filter { !isJournal($0) }.count }
+    var journalEntries: [Note] { liveNotes.filter(isJournal).sorted { $0.createdAt > $1.createdAt } }
+    var noteCount: Int { liveNotes.filter { !isJournal($0) }.count }
 
     /// Renames a label on every note that has it, and keeps its icon (as on the phone).
     func renameLabel(_ old: String, _ new: String) {
@@ -579,7 +600,7 @@ final class Store: ObservableObject {
         map[widget] = style
         set("widget_art", .string(map.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")))
     }
-    func noteCount(label: String) -> Int { data.notes.filter { labels(of: $0).contains(label) }.count }
+    func noteCount(label: String) -> Int { liveNotes.filter { labels(of: $0).contains(label) }.count }
 
     // MARK: Reminders and focus
 
@@ -620,7 +641,7 @@ final class Store: ObservableObject {
         let tagTaskIds = Set(data.taskTags.filter { t in tagHits.contains { $0.id == t.tagId } }.map(\.taskId))
         let tasks = data.tasks.filter { m($0.title) || m($0.description) || m($0.notes) || tagTaskIds.contains($0.id) }
             .sorted { a, b in a.isCompleted != b.isCompleted ? !a.isCompleted : TaskGrouping.chronological(a, b) }
-        return (tasks, data.notes.filter { m($0.title) || m(NoteCodec.plainText($0.body)) || m($0.category) })
+        return (tasks, data.notes.filter { $0.trashedAt == nil && (m($0.title) || (!$0.locked && m(NoteCodec.plainText($0.body))) || m($0.category)) })
     }
 }
 

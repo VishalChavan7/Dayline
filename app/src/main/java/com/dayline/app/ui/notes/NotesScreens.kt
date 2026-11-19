@@ -1,5 +1,32 @@
 package com.dayline.app.ui.notes
 
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.DeleteForever
+import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Unarchive
+import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Print
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Spellcheck
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.DataObject
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.HorizontalRule
+import androidx.compose.material.icons.rounded.AddLink
+import androidx.compose.material.icons.rounded.Today
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
@@ -221,14 +248,59 @@ data class NotesUiState(
     val loading: Boolean = true,
     val notes: List<Note> = emptyList(),
     val total: Int = 0,
+    /** Every #tag in use, parents included (#work before #work/meetings). */
     val categories: List<String> = emptyList(),
-    val category: String? = null,
+    /** "all", "untagged", "todo", "today", "locked", "pinned", "archive", "trash" or "tag:<path>". */
+    val view: String = "all",
     val query: String = "",
     val grid: Boolean = true,
     val labelIcons: Map<String, String> = emptyMap(),
+    val sort: String = "edited",
+    val pinnedFirst: Boolean = true,
+    val counts: Map<String, Int> = emptyMap(),
 ) {
-    val pinned: List<Note> get() = notes.filter { it.isPinned }
-    val others: List<Note> get() = notes.filter { !it.isPinned }
+    private val split get() = pinnedFirst && view != "trash"
+    val pinned: List<Note> get() = if (split) notes.filter { it.isPinned } else emptyList()
+    val others: List<Note> get() = if (split) notes.filter { !it.isPinned } else notes
+    val category: String? get() = view.takeIf { it.startsWith("tag:") }?.removePrefix("tag:")
+    val title: String get() = category?.let { "#$it" } ?: NOTE_VIEWS.firstOrNull { it.first == view }?.second ?: "Notes"
+}
+
+/** The lists of notes (like Bear's sidebar): key and name. */
+val NOTE_VIEWS = listOf(
+    "all" to "Notes", "todo" to "Todo", "today" to "Today", "pinned" to "Pinned",
+    "locked" to "Locked", "untagged" to "Untagged", "archive" to "Archive", "trash" to "Trash",
+)
+
+/** Notes (not journal entries) in a list, searched and sorted. Same rules as the Mac. */
+fun filterNotes(all: List<Note>, view: String, query: String, sort: String, pinnedFirst: Boolean, today: java.time.LocalDate, zone: ZoneId): List<Note> {
+    val q = query.trim()
+    fun day(i: java.time.Instant) = i.atZone(zone).toLocalDate()
+    return all.asSequence().filter { !it.isJournal() }.filter { n ->
+        val live = n.archivedAt == null && n.trashedAt == null
+        when {
+            view == "all" -> live
+            view == "untagged" -> live && n.labels().isEmpty()
+            view == "todo" -> live && com.dayline.app.core.domain.NoteFormat.hasOpenTodo(n.body)
+            view == "today" -> live && (day(n.updatedAt) == today || day(n.createdAt) == today)
+            view == "locked" -> live && n.locked
+            view == "pinned" -> live && n.isPinned
+            view == "archive" -> n.archivedAt != null && n.trashedAt == null
+            view == "trash" -> n.trashedAt != null
+            view.startsWith("tag:") -> live && n.labels().any { com.dayline.app.core.domain.NoteFormat.tagMatches(it, view.removePrefix("tag:")) }
+            else -> live
+        }
+    }.filter { n ->
+        q.isBlank() || n.title.contains(q, true) || (n.category?.contains(q, true) == true) || (!n.locked && NoteCodec.plainText(n.body).contains(q, true))
+    }.sortedWith(
+        compareBy<Note> { if (pinnedFirst && view != "trash" && it.isPinned) 0 else 1 }.then(
+            when (sort) {
+                "created" -> compareByDescending { it.createdAt }
+                "title" -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title.ifBlank { NoteCodec.plainText(it.body) } }
+                else -> compareByDescending { it.updatedAt }
+            },
+        ),
+    ).toList()
 }
 
 /** Labels stored on a note (comma-separated in [Note.category]). */
@@ -251,34 +323,51 @@ fun labelIcon(label: String): ImageVector {
 class NotesViewModel @Inject constructor(
     private val repo: NoteRepository,
     private val settings: com.dayline.app.core.data.prefs.SettingsRepository,
+    private val time: TimeProvider,
+    @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
-    private val category = MutableStateFlow<String?>(null)
+    private val view = MutableStateFlow("all")
     private val grid = MutableStateFlow(true)
-    val state: StateFlow<NotesUiState> = combine(repo.notes, query, category, grid, settings.labelIcons) { all, q, c, g, icons ->
-        val notes = all.filter { !it.isJournal() }
-        val filtered = notes.filter { n ->
-            (c == null || c in n.labels()) &&
-                (q.isBlank() || n.title.contains(q, true) || NoteCodec.plainText(n.body).contains(q, true) || (n.category?.contains(q, true) == true))
-        }
-        NotesUiState(false, filtered, notes.size, notes.flatMap { it.labels() }.distinct().sorted(), c, q, g, icons)
+    private val prefs = context.getSharedPreferences("notes_list", android.content.Context.MODE_PRIVATE)
+    private val order = MutableStateFlow(prefs.getString("sort", "edited").orEmpty() to prefs.getBoolean("pinnedFirst", true))
+    val state: StateFlow<NotesUiState> = combine(
+        combine(repo.allNotes, settings.labelIcons) { a, b -> a to b }, query, view, grid, order,
+    ) { (all, icons), q, v, g, (sort, pinnedFirst) ->
+        val zone = time.zone()
+        val today = time.now().atZone(zone).toLocalDate()
+        val live = all.filter { !it.isJournal() && it.archivedAt == null && it.trashedAt == null }
+        val tags = live.flatMap { it.labels() }.flatMap { com.dayline.app.core.domain.NoteFormat.tagPath(it) }.distinct().sorted()
+        val counts = NOTE_VIEWS.associate { (k, _) -> k to filterNotes(all, k, "", sort, false, today, zone).size }
+        NotesUiState(false, filterNotes(all, v, q, sort, pinnedFirst, today, zone), live.size, tags, v, q, g, icons, sort, pinnedFirst, counts)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotesUiState())
 
     fun setLabelIcon(label: String, icon: String) = viewModelScope.launch { settings.setLabelIcon(label, icon) }
     fun renameLabel(old: String, new: String) = viewModelScope.launch {
         settings.renameLabelIcon(old, new)
         repo.renameLabel(old, new)
-        if (category.value == old) category.value = new.trim().lowercase()
+        if (view.value == "tag:$old") view.value = "tag:" + new.trim().lowercase()
     }
 
     fun setQuery(q: String) { query.value = q }
-    fun setCategory(c: String?) { category.value = c }
+    fun setView(v: String) { view.value = v }
+    fun setSort(sort: String? = null, pinnedFirst: Boolean? = null) {
+        val next = (sort ?: order.value.first) to (pinnedFirst ?: order.value.second)
+        order.value = next
+        prefs.edit().putString("sort", next.first).putBoolean("pinnedFirst", next.second).apply()
+    }
     fun toggleGrid() { grid.value = !grid.value }
     fun togglePin(n: Note) = viewModelScope.launch { repo.setPinned(n.id, !n.isPinned) }
     fun setColor(n: Note, key: Int) = viewModelScope.launch { repo.save(n.copy(color = key)) }
-    fun copy(n: Note) = viewModelScope.launch { repo.save(n.copy(id = 0, isPinned = false)) }
-    suspend fun delete(n: Note) = repo.delete(n.id)
-    fun restore(n: Note) = viewModelScope.launch { repo.restore(n) }
+    fun copy(n: Note) = viewModelScope.launch { repo.save(n.copy(id = 0, isPinned = false, locked = false, archivedAt = null, trashedAt = null)) }
+    suspend fun trash(n: Note) = repo.trash(n.id)
+    fun restoreFromTrash(n: Note) = viewModelScope.launch { repo.restoreFromTrash(n.id) }
+    fun deleteForever(n: Note) = viewModelScope.launch { repo.delete(n.id) }
+    fun emptyTrash() = viewModelScope.launch { repo.emptyTrash() }
+    fun setArchived(n: Note, archived: Boolean) = viewModelScope.launch { if (archived) repo.archive(n.id) else repo.unarchive(n.id) }
+    fun setLocked(n: Note, locked: Boolean) = viewModelScope.launch { repo.setLocked(n.id, locked) }
+    /** Imported files become notes; returns how many. */
+    suspend fun import(notes: List<Note>): Int { notes.forEach { repo.save(it) }; return notes.size }
 }
 
 data class NotesActions(
@@ -286,7 +375,10 @@ data class NotesActions(
     val onNew: () -> Unit = {},
     val onNewKind: (String) -> Unit = {},
     val onQuery: (String) -> Unit = {},
-    val onCategory: (String?) -> Unit = {},
+    val onView: (String) -> Unit = {},
+    val onSort: (String?, Boolean?) -> Unit = { _, _ -> },
+    val onEmptyTrash: () -> Unit = {},
+    val onImport: () -> Unit = {},
     val onToggleGrid: () -> Unit = {},
     val onMenu: (Note) -> Unit = {},
     val onEditLabel: (String) -> Unit = {},
@@ -300,6 +392,19 @@ fun NotesScreen(nav: AppNavigator, vm: NotesViewModel = hiltViewModel()) {
     val scope = rememberCoroutineScope()
     var menuFor by remember { mutableStateOf<Note?>(null) }
     var iconFor by remember { mutableStateOf<String?>(null) }
+    var confirmEmpty by remember { mutableStateOf(false) }
+    var confirmForever by remember { mutableStateOf<Note?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        scope.launch {
+            val notes = uris.mapNotNull { NoteExport.read(context, it) }.mapNotNull { (name, text) -> NoteExport.noteFrom(name, text) }
+            val n = vm.import(notes)
+            snackbar.showSnackbar(if (n == 0) "Nothing to import" else "Imported $n note${if (n == 1) "" else "s"}")
+        }
+    }
+    // Unlocking a locked note (to remove its lock) asks for the fingerprint or screen lock first.
+    var unlockFor by remember { mutableStateOf<Note?>(null) }
+    val unlock = rememberDeviceUnlock { ok -> unlockFor?.let { if (ok) vm.setLocked(it, false) }; unlockFor = null }
     NotesContent(
         state,
         NotesActions(
@@ -307,7 +412,10 @@ fun NotesScreen(nav: AppNavigator, vm: NotesViewModel = hiltViewModel()) {
             onNew = { nav.note(0) },
             onNewKind = { nav.newNote(it) },
             onQuery = vm::setQuery,
-            onCategory = vm::setCategory,
+            onView = vm::setView,
+            onSort = { s, p -> vm.setSort(s, p) },
+            onEmptyTrash = { confirmEmpty = true },
+            onImport = { importer.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", "text/html", "application/octet-stream")) },
             onToggleGrid = vm::toggleGrid,
             onMenu = { menuFor = it },
             onEditLabel = { iconFor = it },
@@ -324,12 +432,20 @@ fun NotesScreen(nav: AppNavigator, vm: NotesViewModel = hiltViewModel()) {
             onCopy = { vm.copy(n) },
             onDelete = {
                 scope.launch {
-                    vm.delete(n)
-                    if (snackbar.showSnackbar("Note deleted", actionLabel = "Undo", withDismissAction = true) == SnackbarResult.ActionPerformed) vm.restore(n)
+                    vm.trash(n)
+                    if (snackbar.showSnackbar("Moved to Trash", actionLabel = "Undo", withDismissAction = true) == SnackbarResult.ActionPerformed) vm.restoreFromTrash(n)
                 }
             },
+            onArchive = { vm.setArchived(n, n.archivedAt == null) },
+            onLock = { if (n.locked) { unlockFor = n; unlock("Remove the lock from this note") } else vm.setLocked(n, true) },
+            onRestore = { vm.restoreFromTrash(n) },
+            onDeleteForever = { confirmForever = n },
+            onShare = { f -> if (n.locked) snackbar.let { scope.launch { it.showSnackbar("Open and unlock the note to share it") } } else scope.launch { NoteExport.share(context, n, f) } },
+            onPrint = { if (!n.locked) NoteExport.print(context, n) },
         )
     }
+    if (confirmEmpty) ConfirmDialog("Empty the Trash?", "Notes in Trash will be deleted for good, here and on your Mac.", "Empty Trash", onConfirm = { vm.emptyTrash() }, onDismiss = { confirmEmpty = false })
+    confirmForever?.let { n -> ConfirmDialog("Delete forever?", "“${n.title.ifBlank { "This note" }}” will be deleted here and on your Mac. This can't be undone.", "Delete", onConfirm = { vm.deleteForever(n) }, onDismiss = { confirmForever = null }) }
 }
 
 /** Google Keep-style notes board: search, labels, pinned and other notes in a staggered grid. */
@@ -342,10 +458,23 @@ fun NotesContent(state: NotesUiState, actions: NotesActions) {
         topBar = {
             DaylineTopBar(
                 scrollBehavior = bar,
-                title = { Text("Notes") },
-                subtitle = { if (!state.loading) Text("${state.total} note${if (state.total == 1) "" else "s"}") },
+                title = { Text(state.title) },
+                subtitle = { if (!state.loading) Text("${state.notes.size} note${if (state.notes.size == 1) "" else "s"}") },
                 actions = {
+                    var more by remember { mutableStateOf(false) }
                     LabeledIconButton(Icons.Rounded.AutoStories, "Journal", actions.onJournal)
+                    Box {
+                        LabeledIconButton(Icons.Rounded.MoreVert, "More", { more = true })
+                        DropdownMenu(more, { more = false }) {
+                            listOf("edited" to "Sort by date edited", "created" to "Sort by date created", "title" to "Sort by title").forEach { (k, label) ->
+                                DropdownMenuItem(text = { Text(label) }, trailingIcon = { if (state.sort == k) Text("✓") }, onClick = { more = false; actions.onSort(k, null) })
+                            }
+                            DropdownMenuItem(text = { Text("Pinned notes first") }, trailingIcon = { if (state.pinnedFirst) Text("✓") }, onClick = { more = false; actions.onSort(null, !state.pinnedFirst) })
+                            HorizontalDivider()
+                            DropdownMenuItem(text = { Text("Import notes…") }, onClick = { more = false; actions.onImport() })
+                            if (state.view == "trash") DropdownMenuItem(text = { Text("Empty Trash", color = MaterialTheme.colorScheme.error) }, onClick = { more = false; actions.onEmptyTrash() })
+                        }
+                    }
                     LabeledIconButton(
                         if (state.grid) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
                         if (state.grid) "List view" else "Grid view",
@@ -364,11 +493,25 @@ fun NotesContent(state: NotesUiState, actions: NotesActions) {
                 if (state.notes.isEmpty()) {
                     Column(Modifier.fillMaxSize().padding(horizontal = Dimens16)) {
                         CompactSearchField(state.query, actions.onQuery, "Search your notes", Modifier.fillMaxWidth().padding(top = 4.dp))
-                        if (state.categories.isNotEmpty()) LabelRow(state, actions, Modifier.padding(top = 10.dp))
+                        LabelRow(state, actions, Modifier.padding(top = 10.dp))
                         EmptyState(
                             Icons.Outlined.Lightbulb,
-                            if (state.query.isNotBlank() || state.category != null) "No matching notes" else "Notes you add appear here",
-                            "Tap New Note to write. Format text, add checklists, colour-code ideas and type #label to organise them.",
+                            when {
+                                state.query.isNotBlank() -> "No matching notes"
+                                state.view == "trash" -> "Trash is empty"
+                                state.view == "archive" -> "Nothing archived"
+                                state.view == "locked" -> "No locked notes"
+                                state.view == "todo" -> "No open checklist items"
+                                state.view == "today" -> "Nothing written today"
+                                state.view != "all" -> "No notes here"
+                                else -> "Notes you add appear here"
+                            },
+                            when (state.view) {
+                                "trash" -> "Notes you delete wait here until you empty the Trash."
+                                "archive" -> "Archive notes you're done with to keep them out of the way."
+                                "locked" -> "Lock a note from its menu to hide its text behind your fingerprint or screen lock."
+                                else -> "Tap New Note to write. Format text, add tables and checklists, and type #label (or #work/meetings) to organise."
+                            },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -385,9 +528,7 @@ fun NotesContent(state: NotesUiState, actions: NotesActions) {
                         item(key = "search", span = StaggeredGridItemSpan.FullLine) {
                             CompactSearchField(state.query, actions.onQuery, "Search your notes", Modifier.fillMaxWidth())
                         }
-                        if (state.categories.isNotEmpty()) {
-                            item(key = "labels", span = StaggeredGridItemSpan.FullLine) { LabelRow(state, actions) }
-                        }
+                        item(key = "labels", span = StaggeredGridItemSpan.FullLine) { LabelRow(state, actions) }
                         if (state.pinned.isNotEmpty()) {
                             item(key = "pinnedLabel", span = StaggeredGridItemSpan.FullLine) { GroupLabel("Pinned") }
                             items(state.pinned, key = { it.id }) { n -> NoteCard(n, Modifier.animateItem(), { actions.onOpen(n.id) }, { actions.onMenu(n) }) }
@@ -404,9 +545,16 @@ fun NotesContent(state: NotesUiState, actions: NotesActions) {
 @Composable
 private fun LabelRow(state: NotesUiState, actions: NotesActions, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        LabelChip("All", null, state.category == null, onClick = { actions.onCategory(null) })
+        NOTE_VIEWS.forEach { (k, name) ->
+            val count = state.counts[k] ?: 0
+            if (k == "all" || k == state.view || (count > 0 && k != "all")) {
+                LabelChip(if (k == "all" || k == "trash" || k == "archive") name else "$name $count", null, state.view == k, onClick = { actions.onView(k) })
+            }
+        }
+        // Tags, parents before children (#work, then #work/meetings).
         state.categories.forEach { c ->
-            LabelChip(c, labelIcon(c), state.category == c, onClick = { actions.onCategory(if (state.category == c) null else c) }, onLongClick = { actions.onEditLabel(c) })
+            val on = state.view == "tag:$c"
+            LabelChip(c, labelIcon(c), on, onClick = { actions.onView(if (on) "all" else "tag:$c") }, onLongClick = { actions.onEditLabel(c) })
         }
     }
 }
@@ -546,6 +694,7 @@ fun NoteCard(note: Note, modifier: Modifier = Modifier, onClick: () -> Unit, onL
             if (note.title.isNotBlank()) {
                 Text(note.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             } else Spacer(Modifier.weight(1f))
+            if (note.locked) Icon(Icons.Rounded.Lock, "Locked", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             if (note.isPinned) Icon(Icons.Rounded.PushPin, "Pinned", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         // Tags sit right under the title, as in the editor.
@@ -557,17 +706,56 @@ fun NoteCard(note: Note, modifier: Modifier = Modifier, onClick: () -> Unit, onL
                 if (labels.size > 3) SmallLabel("+${labels.size - 3}", showIcon = false)
             }
         }
-        // Text and in-place checklists, in order (checklists drawn like the note's own list).
-        val parts = remember(body.html) { if (NoteCodec.isHtml(body.html)) NoteCodec.splitChecklists(body.html) else listOf(NoteCodec.BodyPart.Html(body.html)) }
-        parts.forEach { part ->
-            when (part) {
-                is NoteCodec.BodyPart.Html -> if (NoteCodec.plainText(part.html).isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    RichPreview(part.html, maxLines)
+        if (note.locked) {
+            Spacer(Modifier.height(6.dp))
+            Text("Locked", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@Column
+        }
+        // Text, in-place checklists and blocks, in order (checklists drawn like the note's own list).
+        val blocks = remember(body.html) {
+            if (!NoteCodec.isHtml(body.html)) listOf(com.dayline.app.core.domain.NoteFormat.Block.Rich(body.html))
+            else com.dayline.app.core.domain.NoteFormat.split(body.html)
+        }
+        blocks.take(8).forEach { b ->
+            when (b) {
+                is com.dayline.app.core.domain.NoteFormat.Block.Rich -> {
+                    val parts = if (NoteCodec.isHtml(b.html)) NoteCodec.splitChecklists(b.html) else listOf(NoteCodec.BodyPart.Html(b.html))
+                    parts.forEach { part ->
+                        when (part) {
+                            is NoteCodec.BodyPart.Html -> if (NoteCodec.plainText(part.html).isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
+                                RichPreview(part.html, maxLines)
+                            }
+                            is NoteCodec.BodyPart.Checks -> {
+                                Spacer(Modifier.height(6.dp))
+                                CheckPreviewRows(part.items)
+                            }
+                        }
+                    }
                 }
-                is NoteCodec.BodyPart.Checks -> {
+                is com.dayline.app.core.domain.NoteFormat.Block.Quote, is com.dayline.app.core.domain.NoteFormat.Block.Callout -> {
+                    val html = (b as? com.dayline.app.core.domain.NoteFormat.Block.Quote)?.html ?: (b as com.dayline.app.core.domain.NoteFormat.Block.Callout).html
+                    val accent = (b as? com.dayline.app.core.domain.NoteFormat.Block.Callout)?.let { calloutAccent(it.kind) } ?: MaterialTheme.colorScheme.outline
                     Spacer(Modifier.height(6.dp))
-                    CheckPreviewRows(part.items)
+                    Row(Modifier.drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }.padding(start = 11.dp)) {
+                        RichPreview(html, 3)
+                    }
+                }
+                is com.dayline.app.core.domain.NoteFormat.Block.Code -> {
+                    Spacer(Modifier.height(6.dp))
+                    Text(b.text, style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), maxLines = 4, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)).padding(6.dp))
+                }
+                is com.dayline.app.core.domain.NoteFormat.Block.Table -> {
+                    Spacer(Modifier.height(6.dp))
+                    b.rows.take(4).forEachIndexed { i, r ->
+                        Text(r.joinToString("  ·  "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            fontWeight = if (i == 0 && b.header) FontWeight.SemiBold else null)
+                    }
+                }
+                com.dayline.app.core.domain.NoteFormat.Block.Divider -> {
+                    Spacer(Modifier.height(6.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }
@@ -630,16 +818,35 @@ fun RichPreview(html: String, maxLines: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun NoteActionsSheet(note: Note, onDismiss: () -> Unit, onPin: () -> Unit, onColor: (Int) -> Unit, onCopy: () -> Unit, onDelete: () -> Unit) {
+private fun NoteActionsSheet(
+    note: Note, onDismiss: () -> Unit, onPin: () -> Unit, onColor: (Int) -> Unit, onCopy: () -> Unit, onDelete: () -> Unit,
+    onArchive: () -> Unit = {}, onLock: () -> Unit = {}, onRestore: () -> Unit = {}, onDeleteForever: () -> Unit = {},
+    onShare: (NoteExport.Format) -> Unit = {}, onPrint: () -> Unit = {},
+) {
+    var share by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Text(note.title.ifBlank { "Note" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 24.dp))
             Spacer(Modifier.height(12.dp))
+            if (note.trashedAt != null) {
+                SheetRow(Icons.Rounded.Restore, "Restore") { onRestore(); onDismiss() }
+                SheetRow(Icons.Rounded.DeleteForever, "Delete forever", MaterialTheme.colorScheme.error) { onDismiss(); onDeleteForever() }
+                return@Column
+            }
             ColorRow(note.color, Modifier.padding(horizontal = 20.dp)) { onColor(it); onDismiss() }
             Spacer(Modifier.height(8.dp))
             SheetRow(if (note.isPinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin, if (note.isPinned) "Unpin" else "Pin") { onPin(); onDismiss() }
+            SheetRow(if (note.locked) Icons.Rounded.LockOpen else Icons.Rounded.Lock, if (note.locked) "Remove lock" else "Lock") { onLock(); onDismiss() }
+            SheetRow(if (note.archivedAt != null) Icons.Rounded.Unarchive else Icons.Rounded.Archive, if (note.archivedAt != null) "Unarchive" else "Archive") { onArchive(); onDismiss() }
             SheetRow(Icons.Rounded.ContentCopy, "Make a copy") { onCopy(); onDismiss() }
-            SheetRow(Icons.Rounded.DeleteOutline, "Delete", MaterialTheme.colorScheme.error) { onDismiss(); onDelete() }
+            if (!note.locked) {
+                SheetRow(Icons.Rounded.Share, "Share or export…") { share = !share }
+                if (share) {
+                    NoteExport.Format.entries.forEach { f -> SheetRow(Icons.Rounded.Description, "    ${f.label}") { onShare(f); onDismiss() } }
+                }
+                SheetRow(Icons.Rounded.Print, "Print or save as PDF") { onPrint(); onDismiss() }
+            }
+            SheetRow(Icons.Rounded.DeleteOutline, "Move to Trash", MaterialTheme.colorScheme.error) { onDismiss(); onDelete() }
         }
     }
 }
@@ -722,6 +929,8 @@ class NoteEditorViewModel @Inject constructor(
     val state: StateFlow<NoteEditorState> = _state.asStateFlow()
     val tasks: StateFlow<List<TaskItem>> = tasks.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val projects: StateFlow<List<Project>> = projects.projects.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** Every note, for [[links]] and backlinks. */
+    val allNotes: StateFlow<List<Note>> = repo.allNotes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private var nextKey = 1L
 
     init {
@@ -789,26 +998,48 @@ class NoteEditorViewModel @Inject constructor(
         s.copy(note = s.note.copy(category = left.joinToString(",").ifEmpty { null }), dirty = true)
     }
 
-    /** Saves if anything changed; an empty new note is discarded, like Keep. */
-    fun saveAndClose(html: String, htmlChanged: Boolean) = viewModelScope.launch {
+    /** Saves if anything changed; an empty new note is discarded, like Keep. Then runs [after] with the note's id. */
+    fun saveAndClose(html: String, htmlChanged: Boolean, after: (suspend (Long) -> Unit)? = null) = viewModelScope.launch {
         val s = _state.value
+        if (s.note.trashedAt != null) { _state.update { it.copy(closed = true) }; return@launch }
         val checklist = s.checklist.map { CheckItem(it.text, it.done) }
         val body = NoteBody(html, checklist, s.media)
         val empty = s.note.title.isBlank() && body.isEmpty
         val encoded = NoteCodec.encode(html, checklist, s.media)
         // Labels are tags kept beside the note (typed as #word, then lifted out of the text).
         val category = s.note.category
+        var id = s.note.id
         when {
-            empty && s.note.id != 0L -> repo.delete(s.note.id)
+            empty && s.note.id != 0L -> { repo.delete(s.note.id); id = 0L }
             empty -> Unit
-            s.dirty || htmlChanged || category != s.note.category -> repo.save(s.note.copy(body = encoded, category = category))
+            s.dirty || htmlChanged || category != s.note.category -> id = repo.save(s.note.copy(body = encoded, category = category))
         }
+        if (id != 0L) after?.invoke(id)
         _state.update { it.copy(closed = true) }
     }
 
+    /** Moves the note to Trash (Restore brings it back). */
     fun delete() = viewModelScope.launch {
-        if (noteId != 0L) repo.delete(noteId)
+        if (noteId != 0L) repo.trash(noteId)
         _state.update { it.copy(closed = true) }
+    }
+
+    suspend fun archiveAfterSave(id: Long, archive: Boolean) { if (archive) repo.archive(id) else repo.unarchive(id) }
+
+    fun restoreFromTrash() = viewModelScope.launch {
+        val id = _state.value.note.id
+        if (id == 0L) return@launch
+        repo.restoreFromTrash(id)
+        repo.get(id)?.let { n -> _state.update { it.copy(note = it.note.copy(trashedAt = null, updatedAt = n.updatedAt)) } }
+    }
+
+    fun setLocked(locked: Boolean) = update { it.copy(locked = locked) }
+
+    /** The note a [[link]] points at, made when it doesn't exist yet. */
+    suspend fun linkedNote(title: String): Long {
+        val t = title.trim()
+        allNotes.value.filter { it.trashedAt == null && it.title.trim().equals(t, ignoreCase = true) }.maxByOrNull { it.updatedAt }?.let { return it.id }
+        return repo.save(Note(title = t))
     }
 }
 
@@ -830,6 +1061,12 @@ data class NoteEditorActions(
     val onAddMedia: (com.dayline.app.core.domain.NoteMedia) -> Unit = {},
     val onRemoveMedia: (com.dayline.app.core.domain.NoteMedia) -> Unit = {},
     val onStartKindHandled: () -> Unit = {},
+    val onOpenNote: (String) -> Unit = {},
+    val onArchive: () -> Unit = {},
+    val onSetLocked: (Boolean) -> Unit = {},
+    val onRestore: () -> Unit = {},
+    val onShare: (NoteExport.Format) -> Unit = {},
+    val onPrint: () -> Unit = {},
 )
 
 @OptIn(FlowPreview::class)
@@ -842,8 +1079,11 @@ fun NoteEditorScreen(nav: AppNavigator, vm: NoteEditorViewModel = hiltViewModel(
     var pickTask by remember { mutableStateOf(false) }
     var pickProject by remember { mutableStateOf(false) }
     val labelIcons by vm.labelIcons.collectAsStateWithLifecycle()
+    val allNotes by vm.allNotes.collectAsStateWithLifecycle()
     var iconFor by remember { mutableStateOf<String?>(null) }
     val body = remember { NoteBodyModel() }
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var initialHtml by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.loading) {
         if (!state.loading && initialHtml == null) {
@@ -852,19 +1092,22 @@ fun NoteEditorScreen(nav: AppNavigator, vm: NoteEditorViewModel = hiltViewModel(
         }
     }
     LaunchedEffect(state.closed) { if (state.closed) nav.back() }
-    fun close() {
+    fun close(after: (suspend (Long) -> Unit)? = null) {
         // Unfinished "#label" lines (and a "#label" at the end of the title) become labels.
         val labels = body.liftTagLines().toMutableList()
         titleTag(state.note.title)?.let { (title, label) -> vm.update { it.copy(title = title) }; labels += label }
         if (labels.isNotEmpty()) vm.addLabels(labels)
         val html = if (body.isBlank()) "" else body.toHtml()
-        vm.saveAndClose(html, initialHtml != null && html != initialHtml)
+        vm.saveAndClose(html, initialHtml != null && html != initialHtml, after)
     }
+    /** The note as it is on screen (for sharing and printing before it's saved). */
+    fun current(): Note = state.note.copy(body = NoteCodec.encode(if (body.isBlank()) "" else body.toHtml(), state.checklist.map { CheckItem(it.text, it.done) }, state.media))
     BackHandler { close() }
     androidx.compose.runtime.CompositionLocalProvider(LocalLabelIcons provides labelIcons) {
     NoteEditorContent(
         state = state,
         body = body,
+        allNotes = allNotes,
         linkedTask = tasks.firstOrNull { it.id == state.note.taskId }?.task?.title,
         linkedProject = null,
         actions = NoteEditorActions(
@@ -883,6 +1126,12 @@ fun NoteEditorScreen(nav: AppNavigator, vm: NoteEditorViewModel = hiltViewModel(
             onAddMedia = { vm.addMedia(it) },
             onRemoveMedia = { vm.removeMedia(it) },
             onStartKindHandled = { vm.consumeStartKind() },
+            onOpenNote = { title -> scope.launch { val id = vm.linkedNote(title); nav.note(id) } },
+            onArchive = { val archived = state.note.archivedAt != null; close { id -> vm.archiveAfterSave(id, !archived) } },
+            onSetLocked = { vm.setLocked(it) },
+            onRestore = { vm.restoreFromTrash() },
+            onShare = { f -> scope.launch { NoteExport.share(context, current(), f) } },
+            onPrint = { NoteExport.print(context, current()) },
         ),
     )
     iconFor?.let { label -> LabelIconSheet(label, onDismiss = { iconFor = null }, onRemove = { vm.removeLabel(label) }, onRename = { vm.renameLabel(label, it) }) { vm.setLabelIcon(label, it) } }
@@ -897,7 +1146,7 @@ fun NoteEditorScreen(nav: AppNavigator, vm: NoteEditorViewModel = hiltViewModel(
             vm.update { it.copy(projectId = id) }
         }
     }
-    if (confirmDelete) ConfirmDialog("Delete note?", "This note will be permanently removed.", "Delete", onConfirm = { vm.delete() }, onDismiss = { confirmDelete = false })
+    if (confirmDelete) ConfirmDialog("Move to Trash?", "You can restore it from Trash in Notes until you empty the Trash.", "Move to Trash", onConfirm = { vm.delete() }, onDismiss = { confirmDelete = false })
 }
 
 @Composable
@@ -921,9 +1170,20 @@ private fun PickerSheet(title: String, options: List<Pair<Long?, String>>, onDis
  */
 @OptIn(FlowPreview::class)
 @Composable
-fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: String?, linkedProject: String?, actions: NoteEditorActions) {
+fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: String?, linkedProject: String?, actions: NoteEditorActions, allNotes: List<Note> = emptyList()) {
     val n = state.note
     val bg = noteBackground(n.color)
+    val trashed = n.trashedAt != null
+    // A locked note shows its text only after the fingerprint, face or screen lock (each time it's opened).
+    var unlocked by remember(state.loading) { mutableStateOf(!n.locked) }
+    val unlock = rememberDeviceUnlock { ok -> if (ok) unlocked = true }
+    var finding by remember { mutableStateOf(false) }
+    var infoSheet by remember { mutableStateOf(false) }
+    var spelling by remember { mutableStateOf<List<NoteSpelling.Issue>?>(null) }
+    var spellMessage by remember { mutableStateOf<String?>(null) }
+    var linkDialog by remember { mutableStateOf(false) }
+    val toolScope = androidx.compose.runtime.rememberCoroutineScope()
+    val toolContext = androidx.compose.ui.platform.LocalContext.current
     var showColors by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var attachMenu by remember { mutableStateOf(false) }
@@ -999,10 +1259,36 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More") }
                     DropdownMenu(menu, { menu = false }) {
+                        if (trashed) {
+                            DropdownMenuItem(text = { Text("Restore") }, leadingIcon = { Icon(Icons.Rounded.Restore, null) }, onClick = { menu = false; actions.onRestore() })
+                            return@DropdownMenu
+                        }
+                        DropdownMenuItem(text = { Text("Find and replace") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, onClick = { menu = false; finding = true })
+                        DropdownMenuItem(text = { Text("Info, contents and links") }, leadingIcon = { Icon(Icons.Rounded.Info, null) }, onClick = { menu = false; infoSheet = true })
+                        DropdownMenuItem(text = { Text("Check spelling") }, leadingIcon = { Icon(Icons.Rounded.Spellcheck, null) }, onClick = {
+                            menu = false
+                            toolScope.launch {
+                                val r = NoteSpelling.check(toolContext, n.title + "\n" + body.plainText())
+                                if (r == null) spellMessage = "Turn on a spell checker in Settings › System › Keyboard (or Languages) › Spell checker."
+                                else if (r.isEmpty()) spellMessage = "No spelling mistakes found."
+                                else spelling = r
+                            }
+                        })
+                        HorizontalDivider()
                         DropdownMenuItem(text = { Text(linkedTask ?: "Link a task") }, leadingIcon = { Icon(Icons.Rounded.TaskAlt, null) }, onClick = { menu = false; actions.onPickTask() })
+                        DropdownMenuItem(text = { Text(if (n.locked) "Remove lock" else "Lock note") }, leadingIcon = { Icon(if (n.locked) Icons.Rounded.LockOpen else Icons.Rounded.Lock, null) },
+                            onClick = { menu = false; actions.onSetLocked(!n.locked); unlocked = true })
+                        if (n.id != 0L) {
+                            DropdownMenuItem(text = { Text(if (n.archivedAt != null) "Unarchive" else "Archive") }, leadingIcon = { Icon(if (n.archivedAt != null) Icons.Rounded.Unarchive else Icons.Rounded.Archive, null) },
+                                onClick = { menu = false; actions.onArchive() })
+                        }
+                        NoteExport.Format.entries.forEach { f ->
+                            DropdownMenuItem(text = { Text("Share as ${f.label}") }, leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { menu = false; actions.onShare(f) })
+                        }
+                        DropdownMenuItem(text = { Text("Print or save as PDF") }, leadingIcon = { Icon(Icons.Rounded.Print, null) }, onClick = { menu = false; actions.onPrint() })
                         if (n.id != 0L) {
                             HorizontalDivider()
-                            DropdownMenuItem(text = { Text("Delete", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
+                            DropdownMenuItem(text = { Text("Move to Trash", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; actions.onDelete() })
                         }
                     }
@@ -1010,19 +1296,48 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
             }
         },
         bottomBar = {
-            Column(Modifier.background(bg).navigationBarsPadding().imePadding()) {
+            if (!trashed && unlocked) Column(Modifier.background(bg).navigationBarsPadding().imePadding()) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                FormattingBar(body.activeRich, onChecklist = {
-                    // The selected lines (or the line with the caret) become a checklist right where they are.
-                    val seg = body.active ?: body.firstText
-                    body.convertToChecklist(seg)
-                    haptics.tick()
-                })
+                if (finding) FindBar(body, onClose = { finding = false })
+                FormattingBar(
+                    body.activeRich,
+                    onChecklist = {
+                        // The selected lines (or the line with the caret) become a checklist right where they are.
+                        val seg = body.active ?: body.firstText
+                        body.convertToChecklist(seg)
+                        haptics.tick()
+                    },
+                    tools = BlockTools(
+                        onQuote = { kind -> body.toggleQuote(body.active ?: body.firstText, kind); haptics.tick() },
+                        onCode = { body.makeCode(body.active ?: body.firstText); haptics.tick() },
+                        onTable = { body.insertTable(body.active); haptics.tick() },
+                        onDivider = { body.insertDivider(body.active); haptics.tick() },
+                        onLink = { linkDialog = true },
+                        onMoveLine = { up -> body.active?.let { body.moveLine(it, up) } },
+                        onWikiLink = { body.activeRich.addTextAfterSelection("[[]]"); val sel = body.activeRich.selection; body.activeRich.selection = androidx.compose.ui.text.TextRange((sel.min - 2).coerceAtLeast(0)) },
+                    ),
+                )
             }
         },
     ) { inner ->
         if (state.loading) {
             Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) { LoadingIndicator() }
+            return@Scaffold
+        }
+        if (!unlocked) {
+            Column(Modifier.fillMaxSize().padding(inner).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(Icons.Rounded.Lock, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+                Text(n.title.ifBlank { "Locked note" }, style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(6.dp))
+                Text("This note is locked.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(20.dp))
+                androidx.compose.material3.Button(onClick = { unlock("Show “${n.title.ifBlank { "this note" }}”") }) { Text("Unlock") }
+                Spacer(Modifier.height(16.dp))
+                Text("Locking hides a note's text in Dayline until you use your fingerprint, face or screen lock. It isn't encryption: the note still syncs to your Mac.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            }
+            LaunchedEffect(Unit) { unlock("Show “${n.title.ifBlank { "this note" }}”") }
             return@Scaffold
         }
         ResponsiveBox(Modifier.padding(inner)) {
@@ -1032,8 +1347,22 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
                 val labels = n.labels()
                 val scroll = rememberScrollState()
                 Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 20.dp)) {
+                    if (trashed) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)).padding(start = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.DeleteOutline, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(10.dp))
+                            Text("This note is in Trash.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            androidx.compose.material3.TextButton(onClick = actions.onRestore) { Text("Restore") }
+                        }
+                    } else if (n.archivedAt != null) {
+                        Text("Archived", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                    }
                     val titleStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onSurface)
                     BasicTextField(
+                        readOnly = trashed,
                         value = n.title,
                         onValueChange = { v -> actions.onUpdate { it.copy(title = v) } },
                         textStyle = titleStyle,
@@ -1088,7 +1417,12 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
                                     minHeight = if (onlyText) page * 0.6f else 24.dp,
                                     placeholder = if (i == 0 && body.segments.size == 1) { if (n.labels().isEmpty()) "Note · type #label and press Enter to organise" else "Note" } else null,
                                     onAddLabels = actions.onAddLabels,
+                                    readOnly = trashed,
                                 )
+                                is NoteBodyModel.QuoteSeg -> QuoteBlock(body, seg, bodyStyle, trashed, actions.onAddLabels)
+                                is NoteBodyModel.CodeSeg -> CodeBlock(body, seg, trashed)
+                                is NoteBodyModel.TableSeg -> TableBlock(body, seg, trashed)
+                                is NoteBodyModel.DividerSeg -> DividerBlock(body, seg, trashed)
                                 is NoteBodyModel.CheckSeg -> {
                                     Spacer(Modifier.height(4.dp))
                                     ChecklistBlock(
@@ -1111,6 +1445,7 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
                         Spacer(Modifier.height(4.dp))
                         ChecklistBlock(state.checklist, actions)
                     }
+                    NoteLinksRow(body, n, allNotes, actions.onOpenNote)
                     if (linkedTask != null || linkedProject != null) {
                         Spacer(Modifier.height(16.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1157,6 +1492,14 @@ fun NoteEditorContent(state: NoteEditorState, body: NoteBodyModel, linkedTask: S
             }
         }
     }
+    if (infoSheet) NoteInfoSheet(body, n, allNotes, onOpenNote = { infoSheet = false; actions.onOpenNote(it) }, onDismiss = { infoSheet = false })
+    spelling?.let { issues ->
+        SpellingSheet(issues, onReplace = { w, with -> body.replaceWord(w, with); spelling = spelling?.filter { it.word != w }?.takeIf { it.isNotEmpty() } }, onDismiss = { spelling = null })
+    }
+    spellMessage?.let { m ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { spellMessage = null }, confirmButton = { androidx.compose.material3.TextButton({ spellMessage = null }) { Text("OK") } }, title = { Text("Spelling") }, text = { Text(m) })
+    }
+    if (linkDialog) LinkDialog(body.activeRich, onDismiss = { linkDialog = false })
     if (showColors) {
         ModalBottomSheet(onDismissRequest = { showColors = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Text("Colour", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp))
@@ -1247,10 +1590,14 @@ private fun CheckRow(item: EditCheck, actions: NoteEditorActions, focus: Boolean
 
 // ---------------------------------------------------------------- formatting bar
 
+/** Headings 1–6 (the sizes both apps write) and body text. */
 private enum class TextSize(val label: String, val size: TextUnit, val weight: FontWeight?) {
-    TITLE("Title", 26.sp, FontWeight.Bold),
-    HEADING("Heading", 21.sp, FontWeight.Bold),
-    SUBHEADING("Subheading", 18.sp, FontWeight.SemiBold),
+    H1("Heading 1", 26.sp, FontWeight.Bold),
+    H2("Heading 2", 21.sp, FontWeight.Bold),
+    H3("Heading 3", 18.sp, FontWeight.SemiBold),
+    H4("Heading 4", 16.5.sp, FontWeight.Bold),
+    H5("Heading 5", 15.5.sp, FontWeight.Bold),
+    H6("Heading 6", 14.5.sp, FontWeight.Bold),
     BODY("Body text", TextUnit.Unspecified, null),
 }
 
@@ -1263,7 +1610,7 @@ private enum class Panel { NONE, SIZE, COLOR, HIGHLIGHT }
  * apply to the selected text straight away.
  */
 @Composable
-private fun FormattingBar(rich: RichTextState, onChecklist: () -> Unit) {
+private fun FormattingBar(rich: RichTextState, onChecklist: () -> Unit, tools: BlockTools = BlockTools()) {
     val span = rich.currentSpanStyle
     val para = rich.currentParagraphStyle
     var panel by remember { mutableStateOf(Panel.NONE) }
@@ -1305,7 +1652,7 @@ private fun FormattingBar(rich: RichTextState, onChecklist: () -> Unit) {
                             Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest)
                                 .clickable {
                                     val sizes = TextSize.entries.filter { it.size != TextUnit.Unspecified }
-                                    apply(sizes.map { SpanStyle(fontSize = it.size) } + SpanStyle(fontWeight = FontWeight.SemiBold),
+                                    apply(sizes.map { SpanStyle(fontSize = it.size) } + SpanStyle(fontWeight = FontWeight.SemiBold) + SpanStyle(fontWeight = FontWeight.Bold),
                                         if (t.size == TextUnit.Unspecified) null else SpanStyle(fontSize = t.size, fontWeight = t.weight))
                                     panel = Panel.NONE
                                 }
@@ -1342,6 +1689,8 @@ private fun FormattingBar(rich: RichTextState, onChecklist: () -> Unit) {
             }
             FormatButton(Icons.Rounded.FormatColorText, "Text colour", panel == Panel.COLOR, accent = span.color.takeIf { it != Color.Unspecified && it != HighlightInk }) { open(Panel.COLOR) }
             FormatButton(Icons.Rounded.FormatColorFill, "Highlight", panel == Panel.HIGHLIGHT, accent = span.background.takeIf { it != Color.Unspecified }) { open(Panel.HIGHLIGHT) }
+            FormatButton(Icons.Rounded.Code, "Inline code", rich.isCodeSpan) { rich.toggleCodeSpan() }
+            FormatButton(Icons.Rounded.Link, "Link", rich.isLink, onClick = tools.onLink)
             BarDivider()
             FormatButton(Icons.AutoMirrored.Rounded.FormatListBulleted, "Bulleted list", rich.isUnorderedList) { rich.toggleUnorderedList() }
             FormatButton(Icons.Rounded.FormatListNumbered, "Numbered list", rich.isOrderedList) { rich.toggleOrderedList() }
@@ -1362,6 +1711,30 @@ private fun FormattingBar(rich: RichTextState, onChecklist: () -> Unit) {
                 rich.removeParagraphStyle(ParagraphStyle(textAlign = TextAlign.Left)); rich.removeParagraphStyle(ParagraphStyle(textAlign = TextAlign.Center))
                 rich.addParagraphStyle(ParagraphStyle(textAlign = TextAlign.Right))
             }
+            BarDivider()
+            FormatButton(Icons.Rounded.FormatQuote, "Quote", false) { tools.onQuote("quote") }
+            var callouts by remember { mutableStateOf(false) }
+            Box {
+                FormatButton(Icons.Rounded.Lightbulb, "Callout", false) { callouts = true }
+                DropdownMenu(callouts, { callouts = false }) {
+                    com.dayline.app.core.domain.NoteFormat.CALLOUT_KINDS.forEach { k ->
+                        DropdownMenuItem(
+                            text = { Text(calloutName(k)) },
+                            leadingIcon = { Box(Modifier.size(12.dp).clip(CircleShape).background(calloutAccent(k))) },
+                            onClick = { callouts = false; tools.onQuote("callout:$k") },
+                        )
+                    }
+                }
+            }
+            FormatButton(Icons.Rounded.DataObject, "Code block", false, onClick = tools.onCode)
+            FormatButton(Icons.Rounded.TableChart, "Table", false, onClick = tools.onTable)
+            FormatButton(Icons.Rounded.HorizontalRule, "Line separator", false, onClick = tools.onDivider)
+            FormatButton(Icons.Rounded.AddLink, "Link to another note", false, onClick = tools.onWikiLink)
+            FormatButton(Icons.Rounded.Today, "Insert date", false) {
+                rich.addTextAfterSelection(java.time.LocalDate.now().format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)))
+            }
+            FormatButton(Icons.Rounded.KeyboardArrowUp, "Move line up", false) { tools.onMoveLine(true) }
+            FormatButton(Icons.Rounded.KeyboardArrowDown, "Move line down", false) { tools.onMoveLine(false) }
             BarDivider()
             FormatButton(Icons.Rounded.FormatClear, "Clear formatting", false) { rich.clearSpanStyles() }
         }

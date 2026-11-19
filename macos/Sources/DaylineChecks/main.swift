@@ -100,6 +100,65 @@ eq(NoteCodec.labels("Ideas #Work and #home, not &#39; or #123"), ["work", "home"
 eq(NoteCodec.decodeEntities("a &amp; b &#47; &#x2F; &nope;"), "a & b / / &nope;", "entities")
 eq(NoteCodec.checkPrefix("\u{2611}\u{FE0E} done"), 3, "done check prefix")
 
+// MARK: Note format (same vectors as the phone's NoteFormatTest)
+let mixed = "<p>Intro <b>bold</b></p><blockquote><p>Quoted</p></blockquote><div class=\"callout\" data-kind=\"warning\"><p>Careful</p></div>" +
+    "<pre><code class=\"language-kotlin\">val a = 1 &lt; 2\nprintln(a)</code></pre>" +
+    "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2 &amp; 3</td></tr></table><hr><p>Outro</p>"
+eq(NoteFormat.split(mixed), [
+    .rich("<p>Intro <b>bold</b></p>"), .quote("<p>Quoted</p>"), .callout(kind: "warning", html: "<p>Careful</p>"),
+    .code(text: "val a = 1 < 2\nprintln(a)", language: "kotlin"), .table(rows: [["A", "B"], ["1", "2 & 3"]], header: true),
+    .divider, .rich("<p>Outro</p>"),
+], "split finds every block in order")
+let joinedOnce = NoteFormat.join(NoteFormat.split(mixed))
+eq(NoteFormat.join(NoteFormat.split(joinedOnce)), joinedOnce, "join/split stable")
+eq(NoteFormat.split(joinedOnce), NoteFormat.split(mixed), "join/split same blocks")
+eq(NoteFormat.split("<blockquote><p>a</p><blockquote><p>b</p></blockquote></blockquote><div><p>plain div</p></div>"),
+   [.quote("<p>a</p><blockquote><p>b</p></blockquote>"), .rich("<div><p>plain div</p></div>")], "nested quote, plain div")
+eq(NoteFormat.split("<p>a</p><blockquote><p>never closed</p>"), [.rich("<p>a</p><blockquote><p>never closed</p>")], "unclosed block stays text")
+eq(NoteFormat.split("<div class=\"callout\" data-kind=\"weird\"><p>x</p></div>"), [.callout(kind: "note", html: "<p>x</p>")], "unknown callout kind")
+eq(NoteFormat.blockHtml(.code(text: "<b>&</b>", language: "")), "<pre><code>&lt;b&gt;&amp;&lt;/b&gt;</code></pre>", "code escapes")
+eq(NoteFormat.split("<pre><code>&lt;b&gt;&amp;&lt;/b&gt;</code></pre>"), [.code(text: "<b>&</b>", language: "")], "code unescapes")
+eq(NoteFormat.split("<table><tr><td>a</td></tr><tr><td>b</td><td>c</td></tr></table>"), [.table(rows: [["a", ""], ["b", "c"]], header: false)], "ragged table padded")
+eq(NoteFormat.split(""), [.rich("")], "empty note")
+eq(NoteFormat.headings("<h1>One</h1><p><span style=\"font-size: 21.0px;\"><b>Two</b></span></p><p><span style=\"font-size: 18.0px; font-weight: 600;\">Three</span></p>" +
+    "<p><span style=\"font-size: 1.12em;\"><b>Four</b></span></p><p>Body</p><h6>Six</h6><p><span style=\"font-size: 12.0px;\">small</span></p>"),
+   [.init(level: 1, text: "One"), .init(level: 2, text: "Two"), .init(level: 3, text: "Three"), .init(level: 4, text: "Four"), .init(level: 6, text: "Six")], "headings")
+eq(NoteFormat.tagPath("work/meetings/q4"), ["work", "work/meetings", "work/meetings/q4"], "tag path")
+check(NoteFormat.tagMatches("work/meetings", "work") && NoteFormat.tagMatches("work", "work") && !NoteFormat.tagMatches("workshop", "work"), "tag matches")
+eq(NoteCodec.labels("See #work/meetings and #home, not a#b or &#39;"), ["work/meetings", "home"], "nested labels")
+eq(NoteFormat.wikiLinks("[[Plan]] and [[ Ideas 2026 |alias]] and [[plan]] and [[]] [[a\nb]]"), ["Plan", "Ideas 2026"], "wiki links")
+check(NoteFormat.linksTo("see [[My Note]]", title: "my note") && !NoteFormat.linksTo("see [[My Note]]", title: ""), "links to")
+check(NoteFormat.hasOpenTodo("<p>\u{2610} buy milk</p>") && !NoteFormat.hasOpenTodo("<p>\u{2611}\u{FE0E} bought</p>"), "open todo in text")
+check(NoteFormat.hasOpenTodo(NoteCodec.encode("<p>x</p>", checklist: [CheckItem(text: "y")])) && !NoteFormat.hasOpenTodo(NoteCodec.encode("<p>x</p>", checklist: [CheckItem(text: "y", done: true)])), "open todo in checklist")
+let st = NoteFormat.stats(title: "T", body: "<p>Hello world, it's me.</p><p>Second line</p>")
+eq([st.words, st.paragraphs, st.readMinutes], [6, 2, 1], "stats")
+eq(NoteFormat.stats(title: "", body: "").readMinutes, 0, "empty stats")
+let mdBody = "<p><span style=\"font-size: 21.0px;\"><b>Plan</b></span></p>" +
+    "<p>Some <b>bold</b>, <i>it</i>, <s>gone</s>, <code>x</code>, <mark>hi</mark> and <a href=\"https://a.b\">link</a></p>" +
+    "<ul><li>one</li><li>two</li></ul><ol><li>first</li><li>second</li></ol><p>\u{2610} todo</p><p>\u{2611}\u{FE0E} done</p>" +
+    "<blockquote><p>q</p></blockquote><div class=\"callout\" data-kind=\"tip\"><p>c</p></div><pre><code class=\"language-sh\">ls -la</code></pre>" +
+    "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>x|y</td></tr></table><hr>"
+eq(NoteFormat.toMarkdown(title: "Title", body: NoteCodec.encode(mdBody, checklist: [CheckItem(text: "end", done: true)])),
+   "# Title\n\n## Plan\n\nSome **bold**, *it*, ~~gone~~, `x`, ==hi== and [link](https://a.b)\n\n- one\n- two\n\n1. first\n2. second\n\n- [ ] todo\n- [x] done\n\n> q\n\n> [!TIP]\n> c\n\n```sh\nls -la\n```\n\n| A | B |\n| --- | --- |\n| 1 | x\\|y |\n\n---\n\n- [x] end\n",
+   "markdown export")
+let imported = NoteFormat.fromMarkdown("# My Title\n\nPara one\nstill one with **b** and `a<b`\n\n## Sub\n- a\n- b\n1. x\n2) y\n- [ ] open\n- [x] shut\n> quote\n> more\n\n> [!WARNING]\n> hot\n\n```js\nlet a = \"<x>\";\n```\n| H1 | H2 |\n|----|:--:|\n| a \\| b | c |\n***", fallbackTitle: "fallback")
+eq(imported.title, "My Title", "md import title")
+eq(imported.html, "<p>Para one<br>still one with <b>b</b> and <code>a&lt;b</code></p><h2>Sub</h2><ul><li>a</li><li>b</li></ul><ol><li>x</li><li>y</li></ol>" +
+   "<p>\u{2610} open</p><p>\u{2611}\u{FE0E} shut</p><blockquote><p>quote<br>more</p></blockquote><div class=\"callout\" data-kind=\"warning\"><p>hot</p></div>" +
+   "<pre><code class=\"language-js\">let a = \"&lt;x&gt;\";</code></pre><table><tr><th>H1</th><th>H2</th></tr><tr><td>a | b</td><td>c</td></tr></table><hr>", "md import html")
+eq(NoteFormat.fromMarkdown("just text").title, "", "md import without title")
+let mdMixed = NoteFormat.toMarkdown(title: "T", body: mixed)
+let mdBack = NoteFormat.fromMarkdown(mdMixed)
+eq(NoteFormat.toMarkdown(title: mdBack.title, body: mdBack.html), mdMixed, "markdown round trip")
+eq(NoteCodec.plainText(mixed), "Intro bold\nQuoted\nCareful\nval a = 1 < 2\nprintln(a)\nA  B\n1  2 & 3\n\n———\nOutro", "plain text of blocks")
+check(NoteFormat.toHtmlPage(title: "<x>", body: "<p>a</p>").contains("<h1>&lt;x&gt;</h1><p>a</p>"), "html page escapes title")
+for j in ["<", "<blockquote", "</blockquote>", "<pre><code>", "<table><tr>", "<div class=\"callout\">", "[[", "]]", "#", "#/", "```", "|", "| a |\n| --- |", "> [!", "<hr", "&#99999999;", "\u{0}",
+          String(repeating: "<blockquote>", count: 200) + "x" + String(repeating: "</blockquote>", count: 200)] {
+    _ = NoteFormat.join(NoteFormat.split(j)); _ = NoteFormat.headings(j); _ = NoteFormat.wikiLinks(j); _ = NoteFormat.stats(title: j, body: j)
+    _ = NoteFormat.toMarkdown(title: j, body: j); _ = NoteFormat.fromMarkdown(j); _ = NoteFormat.toHtmlPage(title: j, body: j); _ = NoteCodec.plainText(j)
+}
+passed += 1
+
 // MARK: Sync file
 var data = DaylineData()
 var task = TaskItem(id: 7, title: "Ship Mac app"); task.dueDate = d; task.dueTime = TimeOfDay(hour: 17, minute: 30); task.priority = .URGENT
@@ -177,6 +236,24 @@ check(SyncMerge.canon(["t": true]) != SyncMerge.canon(["t": 1]), "canon keeps bo
 // A real round: the merged file decodes back into the model.
 let decodedMerged = try BackupCodec.decode(try SyncMerge.merge(base: nil, local: BackupCodec.encode(data), remote: Data(phone.utf8)))
 eq(decodedMerged.tasks.count, 2, "merged Mac + phone files decode (tasks from both)")
+
+// MARK: Note archive, trash and lock in the sync file
+var nd = DaylineData()
+var na = Note(id: 1, title: "A"); na.archivedAt = Date(epochMillis: 1_700_000_000_000)
+var nb = Note(id: 2, title: "B"); nb.trashedAt = Date(epochMillis: 1_700_000_100_000)
+var nc = Note(id: 3, title: "C"); nc.locked = true
+nd.notes = [na, nb, nc, Note(id: 4, title: "D")]
+let ndBack = try BackupCodec.decode(BackupCodec.encode(nd))
+eq(ndBack.notes, nd.notes, "note states survive the sync file")
+let ndJson = try JSONSerialization.jsonObject(with: BackupCodec.encode(nd)) as! [String: Any]
+let dRecord = (ndJson["notes"] as! [[String: Any]]).first { $0["title"] as? String == "D" }!
+check([dRecord["archivedAt"], dRecord["trashedAt"], dRecord["locked"]].allSatisfy { $0 == nil || $0 is NSNull }, "unset note states are not written")
+// A phone file with the new fields reads the same.
+let phoneNotes = #"{"app":"\#(BackupCodec.appId)","formatVersion":1,"notes":[{"id":9,"title":"P","body":"","isPinned":false,"color":0,"createdAt":1,"updatedAt":2,"archivedAt":3,"locked":true}]}"#
+let pn = try BackupCodec.decode(Data(phoneNotes.utf8)).notes.first!
+check(pn.archivedAt == Date(epochMillis: 3) && pn.trashedAt == nil && pn.locked, "phone note states decode")
+
+MainActor.assumeIsolated { runBlockLayoutChecks(); runEditorChecks() }
 
 print(failures == 0 ? "All \(passed) checks passed." : "\(failures) failed, \(passed) passed.")
 exit(failures == 0 ? 0 : 1)

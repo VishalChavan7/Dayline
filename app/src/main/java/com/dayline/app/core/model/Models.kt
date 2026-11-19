@@ -152,7 +152,16 @@ data class Note(
     val color: Int = 0,
     val createdAt: Instant = Instant.EPOCH,
     val updatedAt: Instant = Instant.EPOCH,
-)
+    /** Set when the note is archived: out of the main list, still searchable from Archive. */
+    val archivedAt: Instant? = null,
+    /** Set when the note is in Trash; it stays there until restored or deleted for good. */
+    val trashedAt: Instant? = null,
+    /** Locked notes hide their text until the person unlocks with their fingerprint, face or screen lock. */
+    val locked: Boolean = false,
+) {
+    val isArchived get() = archivedAt != null
+    val isTrashed get() = trashedAt != null
+}
 
 enum class HabitFrequency(val label: String) {
     DAILY("Every day"),

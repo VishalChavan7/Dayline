@@ -1,5 +1,6 @@
 package com.dayline.app.core.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -196,6 +197,9 @@ data class NoteEntity(
     val color: Int,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val archivedAt: Instant? = null,
+    val trashedAt: Instant? = null,
+    @ColumnInfo(defaultValue = "0") val locked: Boolean = false,
 )
 
 @Entity(

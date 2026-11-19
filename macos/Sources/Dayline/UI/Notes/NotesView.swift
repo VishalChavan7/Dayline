@@ -1,86 +1,94 @@
 import SwiftUI
 import AppKit
 import DaylineCore
+import DaylineEditor
 
-/// Which note is open (shared so Search and "New Note" can open one).
-@MainActor
-final class NotesUI: ObservableObject {
-    /// nil = nothing open, 0 = a new, not yet saved note.
-    @Published var selected: Int64?
-    /// Changes when a different note is opened (not when the open note gets its id on first save).
-    @Published var token = UUID()
-
-    func open(_ id: Int64) { selected = id; token = UUID() }
-    func newNote() { selected = 0; token = UUID() }
-}
-
-/// Notes in two panes: the phone's note cards (search, labels, pinned first) and an editor beside them.
+/// Notes in up to three panes, like Bear: lists and tags, the notes in a list, and the editor.
 struct NotesView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var ui: NotesUI
-    @State private var label: String?
     @State private var editingLabel: String?
     @State private var query = ""
+    @State private var confirmEmptyTrash = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            listPane
-                .frame(width: 350)
-            Divider()
-            Group {
-                if let id = ui.selected {
-                    NotePane(noteId: id, presetLabel: label).id(ui.token)
-                } else {
-                    EmptyState(art: .notebook, title: store.noteCount == 0 ? "Your notebook is empty" : "Pick a note",
-                               message: "Write with headings, lists and checklists. Add #labels to keep things tidy — they sync with your phone.",
-                               action: ("New Note", { ui.newNote() }))
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { geo in
+            panes(width: geo.size.width)
         }
         .navigationTitle("Notes")
         .sheet(item: Binding(get: { editingLabel.map(LabelRef.init) }, set: { editingLabel = $0?.name })) { ref in
-            LabelEditor(label: ref.name) { renamed in if label == ref.name { label = renamed } }
+            LabelEditor(label: ref.name) { renamed in if ui.filter == .tag(ref.name) { ui.filter = .tag(renamed) } }
+        }
+        .sheet(isPresented: $ui.quickOpen) { QuickOpen().environmentObject(store).environmentObject(ui) }
+        .alert("Empty the Trash?", isPresented: $confirmEmptyTrash) {
+            Button("Empty Trash", role: .destructive) { emptyTrash() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("\(store.count(.trash)) note\(store.count(.trash) == 1 ? "" : "s") will be deleted for good, here and on your phone.") }
+        .onReceive(NotificationCenter.default.publisher(for: .emptyNotesTrash)) { _ in confirmEmptyTrash = true }
+    }
+
+    /// The panes that fit: the editor keeps at least 440 points; the tags column, then the list, give way first.
+    func panes(width: CGFloat) -> some View {
+        let panel: CGFloat = ui.panel != nil && ui.selected != nil ? 250 : 0
+        let showList = ui.layout >= 2 && width - panel - 300 >= 440
+        let showTags = ui.layout >= 3 && showList && width - panel - 300 - 200 >= 440
+        return HStack(spacing: 0) {
+            if showTags {
+                NotesSidebar(editingLabel: $editingLabel).frame(width: 200)
+                Divider()
+            }
+            if showList {
+                listPane(compactFilters: !showTags).frame(width: 300)
+                Divider()
+            }
+            HStack(spacing: 0) {
+                Group {
+                    if let id = ui.selected {
+                        NotePane(noteId: id, presetLabel: presetLabel).id(ui.token)
+                    } else {
+                        EmptyState(art: .notebook, title: store.noteCount == 0 ? "Your notebook is empty" : "Pick a note",
+                                   message: "Write with headings, lists, tables and checklists. Add #tags (even #work/meetings) to keep things tidy — they sync with your phone.",
+                                   action: ("New Note", { ui.newNote() }))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if let panel = ui.panel, let id = ui.selected, id != 0, let n = store.note(id) {
+                    Divider()
+                    NoteInspector(note: n, panel: panel).frame(width: 250)
+                }
+            }
         }
     }
 
-    var notes: [Note] {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        return store.data.notes
-            .filter { !store.isJournal($0) }
-            .filter { label == nil || store.labels(of: $0).contains(label!) }
-            .filter { q.isEmpty || $0.title.localizedCaseInsensitiveContains(q) || NoteCodec.plainText($0.body).localizedCaseInsensitiveContains(q) }
-            .sorted { $0.updatedAt > $1.updatedAt }
+    var presetLabel: String? { if case .tag(let t) = ui.filter { return t }; return nil }
+
+    func emptyTrash() {
+        if let id = ui.selected, store.note(id)?.trashedAt != nil { ui.close() }
+        store.emptyTrash()
     }
 
-    var listPane: some View {
-        let shown = notes
-        let pinned = shown.filter(\.isPinned), others = shown.filter { !$0.isPinned }
+    func listPane(compactFilters: Bool) -> some View {
+        let shown = store.notes(in: ui.filter, query: query, sort: ui.sort, pinnedFirst: ui.pinnedFirst)
+        let pinnedFirst = ui.pinnedFirst && ui.filter != .trash
+        let pinned = pinnedFirst ? shown.filter(\.isPinned) : [], others = pinnedFirst ? shown.filter { !$0.isPinned } : shown
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .bottom) {
-                    ScreenTitle(title: "Notes", subtitle: "\(store.noteCount) note\(store.noteCount == 1 ? "" : "s")")
+                    ScreenTitle(title: ui.filter.title, subtitle: "\(shown.count) note\(shown.count == 1 ? "" : "s")")
                     Spacer()
-                    IconButton(symbol: "square.and.pencil", help: "New note (⌥⌘N)", size: 30) { ui.newNote() }
-                }
-                .padding(.bottom, 4)
-                SearchField(prompt: "Search your notes", text: $query)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        Chip(text: "All", on: label == nil) { label = nil }
-                        ForEach(store.allNoteLabels, id: \.self) { l in
-                            Chip(text: l, symbol: store.labelSymbol(l), on: label == l) { label = l }
-                                .help("Right-click to rename it or change its icon")
-                                .contextMenu {
-                                    Button("Rename and Change Icon…") { editingLabel = l }
-                                }
-                        }
-                        if !store.allNoteLabels.isEmpty {
-                            IconButton(symbol: "slider.horizontal.3", help: "Rename labels or change their icons", size: 26) { editingLabel = label ?? store.allNoteLabels.first }
-                        }
+                    sortMenu
+                    if ui.filter == .trash {
+                        IconButton(symbol: "trash.slash", help: "Empty Trash", size: 30) { confirmEmptyTrash = true }.disabled(shown.isEmpty)
+                    } else {
+                        IconButton(symbol: "square.and.pencil", help: "New note (⌥⌘N)", size: 30) { ui.newNote() }
                     }
                 }
                 .padding(.bottom, 4)
+                SearchField(prompt: "Search \(ui.filter == .all ? "your notes" : ui.filter.title)", text: $query)
+                if compactFilters { filterChips }
+                if ui.filter == .trash && !shown.isEmpty {
+                    Text("Notes in Trash stay until you delete them or empty the Trash.").font(.caption).foregroundStyle(.secondary)
+                }
                 if !pinned.isEmpty {
                     group("PINNED")
                     ForEach(pinned) { n in row(n) }
@@ -89,10 +97,46 @@ struct NotesView: View {
                     if !pinned.isEmpty { group("OTHERS") }
                     ForEach(others) { n in row(n) }
                 }
-                if shown.isEmpty { Text(store.noteCount == 0 ? "No notes yet." : "No matching notes.").foregroundStyle(.secondary).padding(.top, 20) }
+                if shown.isEmpty { Text(emptyText).foregroundStyle(.secondary).padding(.top, 20) }
             }
-            .padding(.leading, Page.h).padding(.trailing, 16).padding(.top, Page.top).padding(.bottom, 16)
+            .padding(.leading, compactFilters ? Page.h : 16).padding(.trailing, 16).padding(.top, Page.top).padding(.bottom, 16)
         }
+    }
+
+    var emptyText: String {
+        if !query.isEmpty { return "No matching notes." }
+        switch ui.filter {
+        case .trash: return "Trash is empty."
+        case .archive: return "Nothing archived. Archive notes you're done with to keep them out of the way."
+        case .locked: return "No locked notes. Lock a note from its ⋯ menu."
+        case .todo: return "No notes with open checklist items."
+        case .today: return "No notes written or edited today."
+        default: return store.noteCount == 0 ? "No notes yet." : "No notes here."
+        }
+    }
+
+    var sortMenu: some View {
+        Menu {
+            Picker("Sort By", selection: $ui.sort) { ForEach(NoteSort.allCases, id: \.self) { Text($0.title).tag($0) } }
+            Toggle("Pinned Notes First", isOn: $ui.pinnedFirst)
+        } label: { Image(systemName: "arrow.up.arrow.down").font(.system(size: 12, weight: .semibold)) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Sort notes")
+    }
+
+    /// Lists and tags as chips when the sidebar is hidden.
+    var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(NotesFilter.views, id: \.self) { f in
+                    Chip(text: f.title, symbol: f.symbol, on: ui.filter == f) { ui.filter = f }
+                }
+                ForEach(store.allNoteLabels, id: \.self) { l in
+                    Chip(text: l, symbol: store.labelSymbol(l), on: ui.filter == .tag(l)) { ui.filter = .tag(l) }
+                        .contextMenu { Button("Rename and Change Icon…") { editingLabel = l } }
+                }
+            }
+        }
+        .padding(.bottom, 4)
     }
 
     func group(_ title: String) -> some View {
@@ -102,14 +146,156 @@ struct NotesView: View {
     func row(_ n: Note) -> some View {
         NoteCard(note: n, selected: ui.selected == n.id)
             .onTapGesture { ui.open(n.id) }
-            .contextMenu {
-                Button(n.isPinned ? "Unpin" : "Pin") { store.setPinned(note: n.id, !n.isPinned) }
-                Menu("Colour") {
-                    NoteColorItems(selected: n.color) { c in var m = n; m.color = c; store.save(m) }
-                }
-                Divider()
-                Button("Delete", role: .destructive) { if ui.selected == n.id { ui.selected = nil }; store.deleteNote(n.id) }
+            .contextMenu { NoteActions(note: n) }
+    }
+}
+
+/// The actions on a note, shared by the list's right-click menu and the editor's ⋯ menu.
+struct NoteActions: View {
+    @EnvironmentObject var store: Store
+    @EnvironmentObject var ui: NotesUI
+    let note: Note
+    var body: some View {
+        if note.trashedAt != nil {
+            Button("Restore") { store.restoreNote(note.id) }
+            Button("Delete Forever…", role: .destructive) { deleteForever() }
+        } else {
+            Button(note.isPinned ? "Unpin" : "Pin") { store.setPinned(note: note.id, !note.isPinned) }
+            Menu("Colour") { NoteColorItems(selected: note.color) { c in var m = note; m.color = c; store.save(m) } }
+            Button(note.locked ? "Remove Lock…" : "Lock Note") { toggleLock() }
+            Button(note.archivedAt != nil ? "Unarchive" : "Archive") {
+                if note.archivedAt != nil { store.unarchiveNote(note.id) } else { store.archiveNote(note.id) }
             }
+            Divider()
+            Menu("Export As") {
+                ForEach(NoteExport.Format.allCases) { f in Button(f.title + "…") { guarded { NoteExport.export(note, as: f, store: store) } } }
+            }
+            Button("Copy As Markdown") { guarded { NoteExport.copyMarkdown(note) } }
+            Button("Print…") { guarded { NoteExport.print(note) } }
+            Divider()
+            Button("Move to Trash", role: .destructive) { store.trashNote(note.id) }
+        }
+    }
+
+    /// Locked notes need Touch ID or the password before their text leaves the app.
+    func guarded(_ f: @escaping () -> Void) {
+        if !note.locked || ui.unlocked.contains(note.id) { f(); return }
+        Task { if await NoteLock.authenticate("show a locked note") { ui.unlocked.insert(note.id); f() } }
+    }
+
+    func toggleLock() {
+        if !note.locked { store.setLocked(note: note.id, true); ui.relock(note.id); return }
+        guarded { store.setLocked(note: note.id, false) }
+    }
+
+    func deleteForever() {
+        let a = NSAlert()
+        a.messageText = "Delete “\(store.noteTitle(note))” forever?"
+        a.informativeText = "It will be deleted here and on your phone. This can't be undone."
+        a.addButton(withTitle: "Delete"); a.addButton(withTitle: "Cancel")
+        a.buttons.first?.hasDestructiveAction = true
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        if ui.selected == note.id { ui.close() }
+        store.deleteNote(note.id)
+    }
+}
+
+extension Notification.Name {
+    static let emptyNotesTrash = Notification.Name("dayline.emptyNotesTrash")
+}
+
+/// Lists (All, Todo, Today, …) and the tag tree.
+struct NotesSidebar: View {
+    @EnvironmentObject var store: Store
+    @EnvironmentObject var ui: NotesUI
+    @Binding var editingLabel: String?
+    @Environment(\.scheme) private var scheme
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(NotesFilter.views, id: \.self) { f in
+                    item(f.title, symbol: f.symbol, count: f == .trash || f == .archive ? nil : store.count(f), on: ui.filter == f, depth: 0) { ui.filter = f }
+                        .dropDestination(for: String.self) { ids, _ in drop(ids, on: f) }
+                }
+                let tree = store.tagTree(sort: ui.tagSort)
+                if !tree.isEmpty {
+                    HStack {
+                        Text("TAGS").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                        Spacer()
+                        Menu {
+                            Picker("Sort Tags By", selection: $ui.tagSort) { ForEach(TagSort.allCases, id: \.self) { Text($0.title).tag($0) } }
+                            Button("Expand All") { ui.expandedTags = Set(allPaths(tree)) }
+                            Button("Collapse All") { ui.expandedTags = [] }
+                        } label: { Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold)) }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    }
+                    .padding(.top, 16).padding(.bottom, 4).padding(.horizontal, 8)
+                    ForEach(flatten(tree), id: \.path) { node in tagRow(node) }
+                }
+            }
+            .padding(.horizontal, 10).padding(.top, Page.top).padding(.bottom, 16)
+        }
+    }
+
+    func allPaths(_ nodes: [TagNode]) -> [String] { nodes.flatMap { [$0.path] + allPaths($0.children) } }
+
+    /// Tags shown, with the children of expanded tags.
+    func flatten(_ nodes: [TagNode]) -> [TagNode] {
+        nodes.flatMap { n in [n] + (ui.expandedTags.contains(n.path) ? flatten(n.children) : []) }
+    }
+
+    func tagRow(_ node: TagNode) -> some View {
+        HStack(spacing: 0) {
+            if !node.children.isEmpty {
+                Button {
+                    if ui.expandedTags.contains(node.path) { ui.expandedTags.remove(node.path) } else { ui.expandedTags.insert(node.path) }
+                } label: {
+                    Image(systemName: ui.expandedTags.contains(node.path) ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).frame(width: 14, height: 20).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            } else { Color.clear.frame(width: 14, height: 1) }
+            item(node.name, symbol: store.labelSymbol(node.path), count: store.count(.tag(node.path)), on: ui.filter == .tag(node.path), depth: node.depth) {
+                ui.filter = .tag(node.path)
+            }
+        }
+        .padding(.leading, CGFloat(node.depth) * 14)
+        .contextMenu {
+            Button("Rename and Change Icon…") { editingLabel = node.path }
+        }
+    }
+
+    func item(_ title: String, symbol: String, count: Int?, on: Bool, depth: Int, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).frame(width: 16)
+                    .foregroundStyle(on ? scheme.onPrimaryContainer : Color.secondary)
+                Text(title).font(.system(size: 13, weight: on ? .semibold : .regular)).lineLimit(1)
+                Spacer()
+                if let count, count > 0 { Text("\(count)").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit() }
+            }
+            .padding(.horizontal, 8).frame(height: 28)
+            .foregroundStyle(on ? scheme.onPrimaryContainer : Color.primary)
+            .background(RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(on ? scheme.primaryContainer : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Dragging a note onto Archive, Trash or Pinned.
+    func drop(_ ids: [String], on f: NotesFilter) -> Bool {
+        let notes = ids.compactMap(Int64.init).compactMap(store.note)
+        guard !notes.isEmpty else { return false }
+        for n in notes {
+            switch f {
+            case .trash: store.trashNote(n.id)
+            case .archive: store.archiveNote(n.id)
+            case .pinned: store.setPinned(note: n.id, true)
+            case .all: if n.trashedAt != nil { store.restoreNote(n.id) }; if n.archivedAt != nil { store.unarchiveNote(n.id) }
+            default: return false
+            }
+        }
+        return true
     }
 }
 
@@ -120,15 +306,16 @@ struct NoteCard: View {
     let note: Note
     let selected: Bool
     var body: some View {
-        let text = NoteCodec.plainText(note.body)
+        let text = note.locked ? "" : NoteCodec.plainText(note.body)
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
-        let title = note.title.isEmpty ? (lines.first ?? "Untitled") : note.title
+        let title = store.noteTitle(note)
         let preview = (note.title.isEmpty ? Array(lines.dropFirst()) : lines).prefix(3).joined(separator: "\n")
         let fill = NoteColors.color(note.color)
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
                 Spacer()
+                if note.locked { Image(systemName: "lock.fill").font(.system(size: 10)).foregroundStyle(.secondary) }
                 if note.isPinned { Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(.secondary) }
             }
             let labels = store.labels(of: note)
@@ -141,7 +328,11 @@ struct NoteCard: View {
                     }
                 }
             }
-            if !preview.isEmpty { Text(preview).font(.system(size: 12.5)).foregroundStyle(.secondary).lineLimit(3) }
+            if note.locked {
+                Label("Locked", systemImage: "lock").font(.system(size: 12.5)).foregroundStyle(.secondary)
+            } else if !preview.isEmpty {
+                Text(preview).font(.system(size: 12.5)).foregroundStyle(.secondary).lineLimit(3)
+            }
             Text(note.updatedAt.formatted(.relative(presentation: .named))).font(.system(size: 10.5)).foregroundStyle(.tertiary)
         }
         .padding(12)
@@ -149,10 +340,11 @@ struct NoteCard: View {
         .surface(fill: fill ?? scheme.card)
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
         .contentShape(Rectangle())
+        .draggable(String(note.id))
     }
 }
 
-/// The note editor: a centred writing column and a floating format bar.
+/// The note editor: title, tags and the text, with a floating format bar.
 struct NotePane: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var ui: NotesUI
@@ -174,55 +366,116 @@ struct NotePane: View {
     @StateObject private var controller = RichTextController()
     @Environment(\.scheme) private var scheme
 
+    var trashed: Bool { note.trashedAt != nil }
+    var lockedAway: Bool { note.locked && note.id != 0 && !ui.unlocked.contains(note.id) }
+
     var body: some View {
+        Group {
+            if lockedAway { lockedView } else { editor }
+        }
+        .background((journal ? nil : NoteColors.color(note.color)?.opacity(0.35)) ?? scheme.card)
+        .onAppear(perform: load)
+        .onDisappear { save() }
+        .onChange(of: store.note(noteId)) { _, n in
+            // Pinned, locked, archived or restored from elsewhere (the list, a menu, sync).
+            guard let n, n.id == note.id else { return }
+            note.isPinned = n.isPinned; note.locked = n.locked; note.archivedAt = n.archivedAt; note.trashedAt = n.trashedAt; note.color = n.color
+        }
+    }
+
+    var lockedView: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "lock.fill").font(.system(size: 40)).foregroundStyle(.secondary)
+            Text(store.noteTitle(note)).font(.system(size: 18, weight: .semibold))
+            Text("This note is locked.").foregroundStyle(.secondary)
+            Button("Unlock") { unlock() }.buttonStyle(.filled).keyboardShortcut(.defaultAction)
+            Text("Locking hides a note's text in Dayline until you use Touch ID or your Mac's password. It isn't encryption: the note syncs to your phone as usual.")
+                .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 360)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    func unlock() {
+        Task { if await NoteLock.authenticate("unlock “\(store.noteTitle(note))”") { ui.unlocked.insert(note.id) } }
+    }
+
+    var editor: some View {
         ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        Text(meta).font(.system(size: 12)).foregroundStyle(.tertiary)
-                        Spacer()
-                        if !journal {
-                            NoteColorButton(selected: note.color) { c in note.color = c; changed() }
-                        }
-                        Button { note.isPinned.toggle(); changed() } label: {
-                            Image(systemName: journal ? (note.isPinned ? "bookmark.fill" : "bookmark") : (note.isPinned ? "pin.fill" : "pin"))
-                        }.buttonStyle(.borderless).help(journal ? "Bookmark" : "Pin")
-                        Button { checklist.append(CheckItem(text: "")); changed() } label: { Image(systemName: "checkmark.square") }.buttonStyle(.borderless).help("Add a checklist")
-                        if note.id != 0 {
-                            Button(role: .destructive) { let id = note.id; ui.selected = nil; store.deleteNote(id) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help(journal ? "Delete entry" : "Delete note")
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 10) {
+                    toolbar
                     if journal {
                         Text(entryDate.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(scheme.primary)
                     }
+                    if trashed { banner("trash", "This note is in Trash.", [("Restore", { store.restoreNote(note.id) })]) }
+                    else if note.archivedAt != nil { banner("archivebox", "This note is archived.", [("Unarchive", { store.unarchiveNote(note.id) })]) }
                     TextField("Title", text: $note.title, axis: .vertical)
                         .font(.system(size: 28, weight: .bold))
                         .textFieldStyle(.plain)
+                        .disabled(trashed)
                         .onChange(of: note.title) { _, _ in changed() }
                     if !journal { labelRow }
-                    RichTextEditor(html: $html, controller: controller)
-                        .frame(minHeight: 360)
-                        .onChange(of: html) { _, _ in changed() }
                     if !checklist.isEmpty { checklistView }
                     if !media.isEmpty {
                         Label(media.map { m in m.type == .AUDIO ? "Voice note" : m.type == .DRAWING ? "Drawing" : "Image" }.joined(separator: ", ") + " — open on your phone to view",
                               systemImage: "photo.on.rectangle").font(.caption).foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 90)
                 }
-                .padding(.horizontal, 48).padding(.top, 28)
-                .frame(maxWidth: 760)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 48).padding(.top, 22).padding(.bottom, 8)
+                RichTextEditor(html: $html, controller: controller, editable: !trashed, zoom: ui.zoom, onOpenNote: openLinked)
+                    .padding(.horizontal, 48)
+                    .onChange(of: html) { _, _ in changed() }
             }
-            FormatBar(controller: controller)
-                .padding(.horizontal, 12).frame(height: 38)
-                .surface(Radius.inner)
-                .padding(.bottom, 18)
+            .frame(maxWidth: 820)
+            .frame(maxWidth: .infinity)
+            if !trashed {
+                FormatBar(controller: controller)
+                    .padding(.horizontal, 10).frame(height: 38)
+                    .surface(Radius.inner)
+                    .padding(.bottom, 16)
+            }
         }
-        .background((journal ? nil : NoteColors.color(note.color)?.opacity(0.35)) ?? scheme.card)
-        .onAppear(perform: load)
-        .onDisappear { save() }
+    }
+
+    var toolbar: some View {
+        HStack(spacing: 10) {
+            Button { ui.togglePanel(.info) } label: { Text(meta).font(.system(size: 12)).foregroundStyle(.tertiary).lineLimit(1) }
+                .buttonStyle(.plain).help("Statistics (⇧⌘I)")
+            Spacer()
+            if !journal && !trashed {
+                NoteColorButton(selected: note.color) { c in note.color = c; changed() }
+            }
+            if !trashed {
+                Button { note.isPinned.toggle(); changed() } label: {
+                    Image(systemName: journal ? (note.isPinned ? "bookmark.fill" : "bookmark") : (note.isPinned ? "pin.fill" : "pin"))
+                }.buttonStyle(.borderless).help(journal ? "Bookmark" : "Pin")
+            }
+            if !journal && note.id != 0 {
+                Button { ui.togglePanel(.contents) } label: { Image(systemName: "list.bullet.indent") }.buttonStyle(.borderless).help("Contents (⇧⌘A)")
+                Button { ui.togglePanel(.backlinks) } label: { Image(systemName: "arrow.uturn.backward.circle") }.buttonStyle(.borderless).help("Backlinks (⇧⌘B)")
+            }
+            if note.id != 0 {
+                if journal {
+                    Button(role: .destructive) { let id = note.id; ui.selected = nil; store.deleteNote(id) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless).help("Delete entry")
+                } else {
+                    Menu { NoteActions(note: store.note(note.id) ?? note) } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More")
+                }
+            }
+        }
+    }
+
+    func banner(_ symbol: String, _ text: String, _ actions: [(String, () -> Void)]) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).foregroundStyle(.secondary)
+            Text(text).font(.system(size: 13))
+            Spacer()
+            ForEach(actions.indices, id: \.self) { i in Button(actions[i].0, action: actions[i].1) }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(Color.primary.opacity(0.06)))
     }
 
     var entryDate: Date { note.id == 0 ? Date() : note.createdAt }
@@ -238,16 +491,19 @@ struct NotePane: View {
                 HStack(spacing: 3) {
                     Image(systemName: store.labelSymbol(l)).font(.system(size: 10, weight: .semibold))
                     Text(l)
-                    Button { labels.removeAll { $0 == l }; changed() } label: { Image(systemName: "xmark").font(.caption2) }.buttonStyle(.borderless)
+                    if !trashed { Button { labels.removeAll { $0 == l }; changed() } label: { Image(systemName: "xmark").font(.caption2) }.buttonStyle(.borderless) }
                 }
                 .font(.system(size: 12, weight: .semibold))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(RoundedRectangle(cornerRadius: Radius.small).fill(Color.primary.opacity(0.07)))
             }
-            TextField("Add #label", text: $newLabel).textFieldStyle(.plain).font(.system(size: 12)).frame(width: 100).onSubmit {
-                let l = newLabel.trimmingCharacters(in: .whitespaces).droppingPrefix("#").lowercased()
-                if !l.isEmpty && !labels.contains(l) { labels.append(l); changed() }
-                newLabel = ""
+            if !trashed {
+                TextField("Add #tag", text: $newLabel).textFieldStyle(.plain).font(.system(size: 12)).frame(width: 110).onSubmit {
+                    let l = newLabel.trimmingCharacters(in: .whitespaces).droppingPrefix("#").lowercased()
+                        .replacingOccurrences(of: ",", with: "").replacingOccurrences(of: " ", with: "-")
+                    if !l.isEmpty && !labels.contains(l) { labels.append(l); changed() }
+                    newLabel = ""
+                }
             }
         }
     }
@@ -268,13 +524,21 @@ struct NotePane: View {
                 }
             }
         }
+        .disabled(trashed)
         .padding(14)
         .background(RoundedRectangle(cornerRadius: Radius.inner, style: .continuous).fill(Color.primary.opacity(0.04)))
     }
 
+    /// Clicking a [[link]]: open that note, or start it when there isn't one yet.
+    func openLinked(_ title: String) {
+        save()
+        if let n = store.note(titled: title) { ui.open(n.id); return }
+        let id = store.createNote(titled: title)
+        if id != 0 { ui.open(id) }
+    }
+
     func load() {
         guard !loaded else { return }
-        loaded = true
         if noteId != 0, let n = store.note(noteId) { note = n }
         let d = NoteCodec.decode(note.body)
         html = d.html; checklist = d.checklist; media = d.media
@@ -282,24 +546,31 @@ struct NotePane: View {
         countWords()
         if noteId == 0, let presetLabel, presetLabel != "__pinned" { labels = [presetLabel] }
         if noteId == 0, journal, let promptTitle { note.title = promptTitle }
+        loaded = true
     }
 
     /// Saves shortly after you stop typing (so sync picks it up), and when you leave.
     func changed() {
-        guard loaded else { return }
+        guard loaded, !trashed else { return }
         pendingSave?.cancel()
         pendingSave = Task { try? await Task.sleep(for: .milliseconds(700)); if !Task.isCancelled { countWords(); save() } }
     }
 
     func countWords() {
-        words = NoteCodec.plainText(NoteCodec.encode(html, checklist: checklist)).split(whereSeparator: \.isWhitespace).count
+        words = NoteFormat.stats(title: "", body: NoteCodec.encode(html, checklist: checklist)).words
     }
 
     func save() {
         pendingSave?.cancel()
+        guard loaded, !trashed, !lockedAway else { return }
         // Deleted (here, from the list, or by sync) while open: don't bring it back.
         if note.id != 0 && store.note(note.id) == nil { return }
         var n = note
+        if let current = store.note(note.id) {
+            // State changed elsewhere (pinned from the list, archived, locked) wins over this copy.
+            n.archivedAt = current.archivedAt; n.trashedAt = current.trashedAt; n.locked = current.locked
+            if current.trashedAt != nil { return }
+        }
         n.body = NoteCodec.encode(html, checklist: checklist, media: media)
         var all = labels
         for l in NoteCodec.labelsOf(title: n.title, body: n.body) where !all.contains(l) { all.append(l) }
@@ -311,6 +582,182 @@ struct NotePane: View {
             note = store.note(id) ?? note
             if ui.selected == 0 || ui.selected == noteId { ui.selected = id }
         }
+    }
+}
+
+/// Statistics, contents (headings) and backlinks of the open note.
+struct NoteInspector: View {
+    @EnvironmentObject var store: Store
+    @EnvironmentObject var ui: NotesUI
+    let note: Note
+    let panel: NotePanel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("", selection: Binding(get: { panel }, set: { ui.panel = $0 })) {
+                Text("Info").tag(NotePanel.info); Text("Contents").tag(NotePanel.contents); Text("Backlinks").tag(NotePanel.backlinks)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            if note.locked && !ui.unlocked.contains(note.id) {
+                Text("Unlock the note to see this.").foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        switch panel {
+                        case .info: info
+                        case .contents: contents
+                        case .backlinks: backlinks
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color.primary.opacity(0.02))
+    }
+
+    var info: some View {
+        let s = NoteFormat.stats(title: note.title, body: note.body)
+        return VStack(alignment: .leading, spacing: 10) {
+            stat("Words", "\(s.words)")
+            stat("Characters", "\(s.characters)")
+            stat("Without spaces", "\(s.charactersNoSpaces)")
+            stat("Paragraphs", "\(s.paragraphs)")
+            stat("Reading time", s.readMinutes == 0 ? "—" : "\(s.readMinutes) min")
+            Divider()
+            stat("Created", note.createdAt.formatted(date: .abbreviated, time: .shortened))
+            stat("Edited", note.updatedAt.formatted(date: .abbreviated, time: .shortened))
+            if let a = note.archivedAt { stat("Archived", a.formatted(date: .abbreviated, time: .shortened)) }
+        }
+    }
+
+    func stat(_ k: String, _ v: String) -> some View {
+        HStack { Text(k).foregroundStyle(.secondary); Spacer(); Text(v).monospacedDigit() }.font(.system(size: 12.5))
+    }
+
+    var contents: some View {
+        let hs = NoteFormat.headings(NoteCodec.decode(note.body).html)
+        return VStack(alignment: .leading, spacing: 6) {
+            if hs.isEmpty { Text("Headings in the note appear here.").font(.system(size: 12.5)).foregroundStyle(.secondary) }
+            ForEach(hs.indices, id: \.self) { i in
+                Button { EditorHub.shared.reveal(hs[i].text, occurrence: hs[..<i].filter { $0.text == hs[i].text }.count) } label: {
+                    Text(hs[i].text).font(.system(size: hs[i].level <= 2 ? 13 : 12.5, weight: hs[i].level == 1 ? .semibold : .regular))
+                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, CGFloat(hs[i].level - 1) * 10)
+            }
+        }
+    }
+
+    var backlinks: some View {
+        let links = store.backlinks(to: note)
+        return VStack(alignment: .leading, spacing: 8) {
+            if note.title.isEmpty { Text("Give the note a title, then link to it from other notes with [[\("Title")]].").font(.system(size: 12.5)).foregroundStyle(.secondary) }
+            else if links.isEmpty { Text("No notes link here yet. Link to this note from another with [[\(note.title)]].").font(.system(size: 12.5)).foregroundStyle(.secondary) }
+            ForEach(links) { n in
+                Button { ui.open(n.id) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(store.noteTitle(n)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        Text(n.updatedAt.formatted(.relative(presentation: .named))).font(.system(size: 11)).foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                    .background(RoundedRectangle(cornerRadius: Radius.small).fill(Color.primary.opacity(0.05)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+/// ⌘O: jump to a note by typing part of its title.
+struct QuickOpen: View {
+    @EnvironmentObject var store: Store
+    @EnvironmentObject var ui: NotesUI
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var index = 0
+    @FocusState private var focused: Bool
+
+    var results: [Note] {
+        let all = store.notes(in: .all, query: "", sort: .edited, pinnedFirst: false) + store.notes(in: .archive, pinnedFirst: false)
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return Array(all.prefix(12)) }
+        let titled = all.filter { store.noteTitle($0).localizedCaseInsensitiveContains(q) }
+        let rest = all.filter { n in !titled.contains { $0.id == n.id } && !n.locked && NoteCodec.plainText(n.body).localizedCaseInsensitiveContains(q) }
+        return Array((titled.sorted { a, b in
+            let pa = store.noteTitle(a).lowercased().hasPrefix(q.lowercased()), pb = store.noteTitle(b).lowercased().hasPrefix(q.lowercased())
+            return pa != pb ? pa : a.updatedAt > b.updatedAt
+        } + rest).prefix(12))
+    }
+
+    var body: some View {
+        let r = results
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Open note…", text: $query).textFieldStyle(.plain).font(.system(size: 17)).focused($focused)
+                    .onSubmit { pick(r) }
+                    .onChange(of: query) { _, _ in index = 0 }
+            }
+            .padding(14)
+            Divider()
+            ScrollView {
+                VStack(spacing: 2) {
+                    ForEach(Array(r.enumerated()), id: \.element.id) { i, n in
+                        Button { index = i; pick(r) } label: {
+                            HStack {
+                                Image(systemName: n.locked ? "lock" : n.archivedAt != nil ? "archivebox" : "note.text").foregroundStyle(.secondary).frame(width: 18)
+                                Text(store.noteTitle(n)).lineLimit(1)
+                                Spacer()
+                                Text(n.updatedAt.formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal, 12).frame(height: 32)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(i == index ? Color.accentColor.opacity(0.18) : .clear))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if r.isEmpty { Text("No notes found.").foregroundStyle(.secondary).padding(20) }
+                }
+                .padding(8)
+            }
+            .frame(height: 300)
+        }
+        .frame(width: 520)
+        .onAppear { focused = true }
+        .onKeyPress(.downArrow) { index = min(index + 1, max(0, r.count - 1)); return .handled }
+        .onKeyPress(.upArrow) { index = max(index - 1, 0); return .handled }
+        .onKeyPress(.escape) { dismiss(); return .handled }
+    }
+
+    func pick(_ r: [Note]) {
+        guard r.indices.contains(index) else { return }
+        let n = r[index]
+        if n.archivedAt != nil { ui.filter = .archive } else if case .tag = ui.filter {} else if ui.filter == .trash { ui.filter = .all }
+        ui.open(n.id)
+        dismiss()
+    }
+}
+
+extension EditorHub {
+    /// Scrolls the open editor to some text (a heading from Contents) and flashes it.
+    func reveal(_ text: String, occurrence: Int = 0) {
+        guard let tv = current else { return }
+        let ns = tv.string as NSString
+        var from = 0, found = NSRange(location: NSNotFound, length: 0)
+        for _ in 0...occurrence {
+            found = ns.range(of: text, range: NSRange(location: from, length: ns.length - from))
+            if found.location == NSNotFound { return }
+            from = found.upperBound
+        }
+        tv.window?.makeFirstResponder(tv)
+        tv.setSelectedRange(NSRange(location: found.location, length: 0))
+        tv.scrollRangeToVisible(found)
+        tv.showFindIndicator(for: found)
     }
 }
 

@@ -1,303 +1,373 @@
 import SwiftUI
 import AppKit
 import DaylineCore
+import DaylineEditor
 
-/// Converts between the phone's note HTML (<p>, <h1>, <h2>, <b>, <i>, <u>, <s>, <ul>/<ol>/<li>, <br>) and NSAttributedString.
-enum NoteHTML {
-    static let bodySize: CGFloat = 15
-    static let h1Size: CGFloat = 24
-    static let h2Size: CGFloat = 19
+/// The note editor that's open, so menu commands (Format, Edit) can reach it.
+@MainActor
+final class EditorHub {
+    static let shared = EditorHub()
+    weak var current: NoteTextView?
 
-    static func attributed(from html: String) -> NSAttributedString {
-        let base = NSFont.systemFont(ofSize: bodySize)
-        guard NoteCodec.isHtml(html) else {
-            return NSAttributedString(string: html, attributes: [.font: base, .foregroundColor: NSColor.textColor])
-        }
-        let styled = """
-        <html><head><meta charset="utf-8"><style>
-        body { font-family: -apple-system, 'Helvetica Neue'; font-size: \(Int(bodySize))px; }
-        p, li { margin: 0; line-height: 1.45; } h1 { font-size: \(Int(h1Size))px; margin: 0; } h2 { font-size: \(Int(h2Size))px; margin: 0; }
-        ul, ol { margin: 0; }
-        </style></head><body>\(html)</body></html>
-        """
-        guard let data = styled.data(using: .utf8),
-              let a = try? NSMutableAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.html,
-                                                                        .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil)
-        else { return NSAttributedString(string: NoteCodec.plainText(html), attributes: [.font: base]) }
-        // Follow the app's appearance: drop fixed colours from the HTML import.
-        let all = NSRange(location: 0, length: a.length)
-        a.removeAttribute(.foregroundColor, range: all)
-        a.removeAttribute(.backgroundColor, range: all)
-        a.addAttribute(.foregroundColor, value: NSColor.textColor, range: all)
-        // Trim the trailing newline the importer adds.
-        while a.length > 0, a.string.hasSuffix("\n") { a.deleteCharacters(in: NSRange(location: a.length - 1, length: 1)) }
-        return a
-    }
-
-    static func html(from a: NSAttributedString) -> String {
-        let ns = a.string as NSString
-        var out = ""
-        var openList: String?
-        func closeList() { if let l = openList { out += "</\(l)>"; openList = nil } }
-        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length), options: [.byParagraphs, .substringNotRequired]) { _, range, _, _ in
-            if range.length == 0 { closeList(); out += "<br>"; return }
-            let style = a.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle
-            let font = a.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
-            let size = font?.pointSize ?? bodySize
-            let list = style?.textLists.first
-            let tag: String = list != nil ? "li" : size >= (h1Size - 1) ? "h1" : size >= (h2Size - 1) ? "h2" : "p"
-            var inner = ""
-            var first = true
-            a.enumerateAttributes(in: range) { attrs, r, _ in
-                var text = ns.substring(with: r)
-                if first && list != nil {
-                    // Drop the list marker the text system shows ("\t•\t", "\t1.\t").
-                    text = text.replacingOccurrences(of: "^\\t?[^\\t]{0,4}\\t", with: "", options: .regularExpression)
-                }
-                first = false
-                var piece = NoteCodec.escape(text).replacingOccurrences(of: "\u{2028}", with: "<br>")
-                let f = attrs[.font] as? NSFont
-                let traits = f?.fontDescriptor.symbolicTraits ?? []
-                if traits.contains(.bold) && tag != "h1" && tag != "h2" { piece = "<b>\(piece)</b>" }
-                if traits.contains(.italic) { piece = "<i>\(piece)</i>" }
-                if let u = attrs[.underlineStyle] as? Int, u != 0 { piece = "<u>\(piece)</u>" }
-                if let s = attrs[.strikethroughStyle] as? Int, s != 0 { piece = "<s>\(piece)</s>" }
-                inner += piece
-            }
-            if let list {
-                let kind = list.markerFormat == .decimal ? "ol" : "ul"
-                if openList != kind { closeList(); out += "<\(kind)>"; openList = kind }
-            } else { closeList() }
-            out += "<\(tag)>\(inner)</\(tag)>"
-        }
-        closeList()
-        return out
+    /// Runs a command on the open editor. Character formatting only applies while you're typing in the note.
+    func run(needsFocus: Bool = false, _ f: (NoteTextView) -> Void) {
+        guard let tv = current, tv.isEditable else { NSSound.beep(); return }
+        if needsFocus, tv.window?.firstResponder !== tv { NSSound.beep(); return }
+        tv.window?.makeFirstResponder(tv)
+        f(tv)
     }
 }
 
-/// Lets the formatting bar talk to the text view.
+/// Lets the format bar talk to the text view and shows what's active.
 @MainActor
 final class RichTextController: ObservableObject {
-    weak var textView: NSTextView?
+    weak var textView: NoteTextView?
+    @Published var state = FormatState()
 
-    func toggleTrait(_ trait: NSFontTraitMask) {
-        guard let tv = textView, let storage = tv.textStorage else { return }
-        let range = tv.selectedRange()
-        let fm = NSFontManager.shared
-        if range.length == 0 {
-            let f = (tv.typingAttributes[.font] as? NSFont) ?? NSFont.systemFont(ofSize: NoteHTML.bodySize)
-            let has = fm.traits(of: f).contains(trait)
-            tv.typingAttributes[.font] = has ? fm.convert(f, toNotHaveTrait: trait) : fm.convert(f, toHaveTrait: trait)
-            return
-        }
-        var allHave = true
-        storage.enumerateAttribute(.font, in: range) { v, _, _ in if let f = v as? NSFont, !fm.traits(of: f).contains(trait) { allHave = false } }
-        storage.beginEditing()
-        storage.enumerateAttribute(.font, in: range) { v, r, _ in
-            let f = (v as? NSFont) ?? NSFont.systemFont(ofSize: NoteHTML.bodySize)
-            storage.addAttribute(.font, value: allHave ? fm.convert(f, toNotHaveTrait: trait) : fm.convert(f, toHaveTrait: trait), range: r)
-        }
-        storage.endEditing()
-        tv.didChangeText()
-    }
-
-    func toggleLine(_ key: NSAttributedString.Key) {
-        guard let tv = textView, let storage = tv.textStorage else { return }
-        let range = tv.selectedRange()
-        guard range.length > 0 else {
-            let on = (tv.typingAttributes[key] as? Int ?? 0) != 0
-            tv.typingAttributes[key] = on ? 0 : NSUnderlineStyle.single.rawValue
-            return
-        }
-        var allOn = true
-        storage.enumerateAttribute(key, in: range) { v, _, _ in if (v as? Int ?? 0) == 0 { allOn = false } }
-        storage.addAttribute(key, value: allOn ? 0 : NSUnderlineStyle.single.rawValue, range: range)
-        tv.didChangeText()
-    }
-
-    /// Body, heading 1 or heading 2 for the selected paragraphs.
-    func setSize(_ size: CGFloat) {
-        guard let tv = textView, let storage = tv.textStorage else { return }
-        let ns = storage.string as NSString
-        let range = ns.paragraphRange(for: tv.selectedRange())
-        storage.beginEditing()
-        storage.enumerateAttribute(.font, in: range) { v, r, _ in
-            let f = (v as? NSFont) ?? NSFont.systemFont(ofSize: NoteHTML.bodySize)
-            var nf = NSFontManager.shared.convert(f, toSize: size)
-            nf = size > NoteHTML.bodySize ? NSFontManager.shared.convert(nf, toHaveTrait: .boldFontMask) : NSFontManager.shared.convert(nf, toNotHaveTrait: .boldFontMask)
-            storage.addAttribute(.font, value: nf, range: r)
-        }
-        storage.endEditing()
-        tv.typingAttributes[.font] = NSFont.systemFont(ofSize: size, weight: size > NoteHTML.bodySize ? .bold : .regular)
-        tv.didChangeText()
-    }
-
-    /// Turns the selected paragraphs into checklist lines (or back), like the phone.
-    func toggleChecklist() {
-        guard let tv = textView, let storage = tv.textStorage else { return }
-        let ns = storage.string as NSString
-        let full = ns.paragraphRange(for: tv.selectedRange())
-        var paras: [NSRange] = []
-        ns.enumerateSubstrings(in: full, options: [.byParagraphs, .substringNotRequired]) { _, r, _, _ in paras.append(r) }
-        if paras.isEmpty { paras = [NSRange(location: full.location, length: 0)] }
-        let all = paras.allSatisfy { NoteCodec.checkPrefix(ns.substring(with: $0)) > 0 }
-        storage.beginEditing()
-        for r in paras.reversed() {
-            let text = ns.substring(with: r)
-            let p = NoteCodec.checkPrefix(text)
-            if all && p > 0 {
-                let len = (String(text.unicodeScalars.prefix(p)) as NSString).length
-                storage.deleteCharacters(in: NSRange(location: r.location, length: len))
-            } else if !all && p == 0 {
-                let attrs = r.location < storage.length ? storage.attributes(at: r.location, effectiveRange: nil) : tv.typingAttributes
-                storage.insert(NSAttributedString(string: NoteCodec.checkOpen, attributes: attrs), at: r.location)
-            }
-        }
-        storage.endEditing()
-        tv.didChangeText()
-    }
-
-    func toggleBullets() {
-        guard let tv = textView else { return }
+    func run(_ f: (NoteTextView) -> Void) {
+        guard let tv = textView, tv.isEditable else { return }
         tv.window?.makeFirstResponder(tv)
-        // Uses AppKit's own list support (exported as <ul><li>).
-        let ns = (tv.string as NSString)
-        let range = ns.paragraphRange(for: tv.selectedRange())
-        let style = tv.textStorage?.attribute(.paragraphStyle, at: min(range.location, max(0, (tv.textStorage?.length ?? 1) - 1)), effectiveRange: nil) as? NSParagraphStyle
-        let hasList = !(style?.textLists.isEmpty ?? true)
-        guard let storage = tv.textStorage else { return }
-        storage.beginEditing()
-        var paras: [NSRange] = []
-        ns.enumerateSubstrings(in: range, options: [.byParagraphs, .substringNotRequired]) { _, r, _, _ in paras.append(r) }
-        for r in paras.reversed() {
-            let text = ns.substring(with: r)
-            let ps = (style?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
-            if hasList {
-                ps.textLists = []
-                let stripped = text.replacingOccurrences(of: "^\\t?[^\\t]{0,4}\\t", with: "", options: .regularExpression)
-                let attrs = r.length > 0 ? storage.attributes(at: r.location, effectiveRange: nil) : tv.typingAttributes
-                storage.replaceCharacters(in: r, with: NSAttributedString(string: stripped, attributes: attrs))
-                storage.addAttribute(.paragraphStyle, value: ps, range: NSRange(location: r.location, length: (stripped as NSString).length))
-            } else {
-                let list = NSTextList(markerFormat: .disc, options: 0)
-                ps.textLists = [list]
-                ps.headIndent = 18; ps.firstLineHeadIndent = 0
-                let attrs = r.length > 0 ? storage.attributes(at: r.location, effectiveRange: nil) : tv.typingAttributes
-                let marked = "\t\(list.marker(forItemNumber: 1))\t" + text
-                storage.replaceCharacters(in: r, with: NSAttributedString(string: marked, attributes: attrs))
-                storage.addAttribute(.paragraphStyle, value: ps, range: NSRange(location: r.location, length: (marked as NSString).length))
-            }
-        }
-        storage.endEditing()
-        tv.didChangeText()
-    }
-}
-
-/// Clicking a ☐/☑ box at the start of a line ticks it.
-final class NoteTextView: NSTextView {
-    override func mouseDown(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        let i = characterIndexForInsertion(at: p)
-        let ns = string as NSString
-        for idx in [i, i - 1] where idx >= 0 && idx < ns.length {
-            let ch = ns.character(at: idx)
-            if ch == 0x2610 || ch == 0x2611 {
-                let para = ns.paragraphRange(for: NSRange(location: idx, length: 0))
-                if para.location == idx, let storage = textStorage {
-                    let text = ns.substring(with: para)
-                    let p = NoteCodec.checkPrefix(text)
-                    let len = (String(text.unicodeScalars.prefix(p)) as NSString).length
-                    let attrs = storage.attributes(at: idx, effectiveRange: nil)
-                    let replacement = ch == 0x2610 ? NoteCodec.checkDone : NoteCodec.checkOpen
-                    storage.replaceCharacters(in: NSRange(location: idx, length: len), with: NSAttributedString(string: replacement, attributes: attrs))
-                    didChangeText()
-                    return
-                }
-            }
-        }
-        super.mouseDown(with: event)
+        f(tv)
+        state = tv.formatState
     }
 }
 
 struct RichTextEditor: NSViewRepresentable {
     @Binding var html: String
     @ObservedObject var controller: RichTextController
+    var editable = true
+    var zoom: CGFloat = 1
+    var onOpenNote: (String) -> Void = { _ in }
+    @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
-        let tv = NoteTextView(frame: .zero)
-        tv.minSize = .zero
-        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        tv.isVerticallyResizable = true
-        tv.isHorizontallyResizable = false
-        tv.autoresizingMask = [.width]
-        tv.textContainer?.widthTracksTextView = true
-        tv.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        let tv = NoteTextView.make(style: NoteStyle(dark: colorScheme == .dark))
+        // The text always fits the visible width (the view starts at zero size and follows the clip view).
+        tv.frame = NSRect(origin: .zero, size: NSSize(width: max(1, scroll.contentSize.width), height: 1))
         scroll.documentView = tv
-        tv.isRichText = true
-        tv.allowsUndo = true
-        tv.drawsBackground = false
-        tv.textContainerInset = NSSize(width: 0, height: 6)
-        tv.textContainer?.lineFragmentPadding = 0
-        tv.font = NSFont.systemFont(ofSize: NoteHTML.bodySize)
-        let para = NSMutableParagraphStyle(); para.lineSpacing = 4; para.paragraphSpacing = 4
-        tv.typingAttributes = [.font: NSFont.systemFont(ofSize: NoteHTML.bodySize), .foregroundColor: NSColor.textColor, .paragraphStyle: para]
-        tv.defaultParagraphStyle = para
-        tv.isAutomaticQuoteSubstitutionEnabled = false
-        tv.textStorage?.setAttributedString(NoteHTML.attributed(from: html))
-        tv.delegate = context.coordinator
+        scroll.contentView.postsFrameChangedNotifications = true
+        context.coordinator.observe(scroll)
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 70, right: 0)
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.allowsMagnification = true
+        scroll.minMagnification = 0.6
+        scroll.maxMagnification = 2.5
+        tv.load(html: html)
+        tv.delegate = context.coordinator
+        tv.onStateChange = { [weak controller] s in controller?.state = s }
+        tv.onOpenNote = { context.coordinator.parent.onOpenNote($0) }
+        tv.isEditable = editable
         context.coordinator.lastHTML = html
         controller.textView = tv
+        EditorHub.shared.current = tv
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let tv = scroll.documentView as? NSTextView else { return }
+        guard let tv = scroll.documentView as? NoteTextView else { return }
+        context.coordinator.parent = self
         controller.textView = tv
+        EditorHub.shared.current = tv
+        let style = NoteStyle(dark: colorScheme == .dark)
+        if tv.style != style { tv.setStyle(style) }
+        if tv.isEditable != editable { tv.isEditable = editable }
+        if abs(scroll.magnification - zoom) > 0.001 { scroll.magnification = zoom }
+        let w = scroll.contentView.bounds.width
+        if w > 1, abs(tv.frame.width - w) > 0.5 { tv.setFrameSize(NSSize(width: w, height: tv.frame.height)) }
         if html != context.coordinator.lastHTML {
             context.coordinator.lastHTML = html
-            tv.textStorage?.setAttributedString(NoteHTML.attributed(from: html))
+            tv.load(html: html)
         }
+    }
+
+    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        if let tv = scroll.documentView as? NoteTextView, EditorHub.shared.current === tv { EditorHub.shared.current = nil }
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: RichTextEditor
         var lastHTML = ""
         init(_ p: RichTextEditor) { parent = p }
+        var token: NSObjectProtocol?
+        deinit { if let token { NotificationCenter.default.removeObserver(token) } }
+        func observe(_ scroll: NSScrollView) {
+            token = NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak scroll] _ in
+                MainActor.assumeIsolated {
+                    guard let scroll, let tv = scroll.documentView as? NSTextView else { return }
+                    let w = scroll.contentView.bounds.width
+                    if abs(tv.frame.width - w) > 0.5 { tv.setFrameSize(NSSize(width: w, height: tv.frame.height)) }
+                }
+            }
+        }
         func textDidChange(_ n: Notification) {
-            guard let tv = n.object as? NSTextView, let s = tv.textStorage else { return }
-            let h = NoteHTML.html(from: s)
+            guard let tv = n.object as? NoteTextView else { return }
+            let h = tv.html
+            guard h != lastHTML else { return }
             lastHTML = h
             parent.html = h
+        }
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            if let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)), ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
+                NSWorkspace.shared.open(url); return true
+            }
+            return true   // anything else (javascript:, file:) is never opened
         }
     }
 }
 
+/// The floating formatting bar under a note.
 struct FormatBar: View {
     @ObservedObject var controller: RichTextController
+    @State private var colors = false
+    @State private var highlights = false
+    @State private var linking = false
+    @State private var url = ""
+    @Environment(\.scheme) private var scheme
+
+    var s: FormatState { controller.state }
+
     var body: some View {
-        HStack(spacing: 2) {
-            Group {
-                Button { controller.toggleTrait(.boldFontMask) } label: { Image(systemName: "bold") }.help("Bold (⌘B)").keyboardShortcut("b")
-                Button { controller.toggleTrait(.italicFontMask) } label: { Image(systemName: "italic") }.help("Italic (⌘I)").keyboardShortcut("i")
-                Button { controller.toggleLine(.underlineStyle) } label: { Image(systemName: "underline") }.help("Underline (⌘U)").keyboardShortcut("u")
-                Button { controller.toggleLine(.strikethroughStyle) } label: { Image(systemName: "strikethrough") }.help("Strikethrough")
-            }
-            Divider().frame(height: 16).padding(.horizontal, 4)
-            Group {
-                Button { controller.setSize(NoteHTML.h1Size) } label: { Text("H1").fontWeight(.bold) }.help("Heading")
-                Button { controller.setSize(NoteHTML.h2Size) } label: { Text("H2").fontWeight(.semibold) }.help("Subheading")
-                Button { controller.setSize(NoteHTML.bodySize) } label: { Text("Aa") }.help("Body text")
-            }
-            Divider().frame(height: 16).padding(.horizontal, 4)
-            Button { controller.toggleBullets() } label: { Image(systemName: "list.bullet") }.help("Bulleted list")
-            Button { controller.toggleChecklist() } label: { Image(systemName: "checklist") }.help("Checklist lines — click a box to tick it")
+        // Narrow windows (three panes and the info panel) get the compact bar instead of pushing the window wider.
+        ViewThatFits(in: .horizontal) {
+            full
+            compact
         }
-        .buttonStyle(.borderless)
         .font(.system(size: 13))
+    }
+
+    var compact: some View {
+        HStack(spacing: 1) {
+            headingMenu
+            sep
+            tool("bold", "Bold (⌘B)", s.bold) { $0.toggleTrait(.boldFontMask) }
+            tool("italic", "Italic (⌘I)", s.italic) { $0.toggleTrait(.italicFontMask) }
+            tool("underline", "Underline (⌘U)", s.underline) { $0.toggleLine(.underlineStyle) }
+            colourButton
+            highlightButton
+            sep
+            Menu {
+                Button("Strikethrough") { controller.run { $0.toggleLine(.strikethroughStyle) } }
+                Divider()
+                Button("Bulleted List") { controller.run { $0.toggleList(ordered: false) } }
+                Button("Numbered List") { controller.run { $0.toggleList(ordered: true) } }
+                Button("Checklist") { controller.run { $0.toggleChecklist() } }
+                Divider()
+                Button("Quote") { controller.run { $0.toggleBlock("quote") } }
+                Menu("Callout") { ForEach(NoteFormat.calloutKinds, id: \.self) { k in Button(k.capitalized) { controller.run { $0.toggleBlock("callout:" + k) } } } }
+                Button("Code Block") { controller.run { $0.toggleBlock("code:") } }
+                Button("Table") { controller.run { $0.insertTable(rows: 3, columns: 3) } }
+                Button("Line Separator") { controller.run { $0.insertDivider() } }
+                Divider()
+                Button("Link…") { controller.run { LinkPrompt.run($0) } }
+            } label: { Image(systemName: "plus.circle") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Lists, blocks and links").frame(width: 26)
+            moreMenu
+        }
+    }
+
+    var headingMenu: some View {
+        Menu {
+            Button("Body Text") { controller.run { $0.setHeading(0) } }
+            ForEach(1...6, id: \.self) { l in Button("Heading \(l)") { controller.run { $0.setHeading(l) } } }
+        } label: {
+            Text(s.heading > 0 ? "H\(s.heading)" : "Aa").font(.system(size: 13, weight: .semibold)).frame(minWidth: 26)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Heading level")
+    }
+
+    var full: some View {
+        HStack(spacing: 1) {
+            Menu {
+                Button("Body Text") { controller.run { $0.setHeading(0) } }
+                ForEach(1...6, id: \.self) { l in Button("Heading \(l)") { controller.run { $0.setHeading(l) } } }
+            } label: {
+                Text(s.heading > 0 ? "H\(s.heading)" : "Aa").font(.system(size: 13, weight: .semibold)).frame(minWidth: 26)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Heading level")
+            sep
+            tool("bold", "Bold (⌘B)", s.bold) { $0.toggleTrait(.boldFontMask) }
+            tool("italic", "Italic (⌘I)", s.italic) { $0.toggleTrait(.italicFontMask) }
+            tool("underline", "Underline (⌘U)", s.underline) { $0.toggleLine(.underlineStyle) }
+            tool("strikethrough", "Strikethrough (⇧⌘E)", s.strike) { $0.toggleLine(.strikethroughStyle) }
+            colourButton
+            highlightButton
+            sep
+            tool("list.bullet", "Bulleted list (⌘L)", s.list == "ul") { $0.toggleList(ordered: false) }
+            tool("list.number", "Numbered list (⇧⌘L)", s.list == "ol") { $0.toggleList(ordered: true) }
+            tool("checklist", "Checklist (⌘T) — click a box to tick it", s.checklist) { $0.toggleChecklist() }
+            sep
+            tool("text.quote", "Quote (⇧⌘T)", s.block == "quote") { $0.toggleBlock("quote") }
+            Menu {
+                ForEach(NoteFormat.calloutKinds, id: \.self) { k in
+                    Button(k.capitalized) { controller.run { $0.toggleBlock("callout:" + k) } }
+                }
+            } label: { Image(systemName: "exclamationmark.bubble") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Callout").frame(width: 26)
+                .background(active(s.block?.hasPrefix("callout") == true))
+            tool("chevron.left.forwardslash.chevron.right", "Code block (⌥⌘C)", s.block?.hasPrefix("code") == true) { $0.toggleBlock("code:") }
+            Menu {
+                if s.inTable {
+                    Button("Add Row") { controller.run { $0.editTable(.addRow) } }
+                    Button("Add Column") { controller.run { $0.editTable(.addColumn) } }
+                    Button("Delete Row") { controller.run { $0.editTable(.deleteRow) } }
+                    Button("Delete Column") { controller.run { $0.editTable(.deleteColumn) } }
+                    Button("Header Row On/Off") { controller.run { $0.editTable(.toggleHeader) } }
+                    Divider()
+                    Button("Delete Table", role: .destructive) { controller.run { $0.editTable(.delete) } }
+                } else {
+                    ForEach([(2, 2), (3, 3), (4, 3), (3, 5)], id: \.0) { r, c in
+                        Button("\(c) × \(r) Table") { controller.run { $0.insertTable(rows: r, columns: c) } }
+                    }
+                }
+            } label: { Image(systemName: "tablecells") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Table").frame(width: 26)
+                .background(active(s.inTable))
+            tool("minus", "Line separator (⌥⌘S)", false) { $0.insertDivider() }
+            sep
+            Button { url = s.link ?? ""; linking = true } label: { Image(systemName: "link").frame(width: 26, height: 26) }
+                .buttonStyle(.borderless).help("Link (⌘K)").background(active(s.link != nil))
+                .popover(isPresented: $linking, arrowEdge: .top) { linkEditor }
+            moreMenu
+        }
+    }
+
+    var colourButton: some View {
+        Button { colors.toggle() } label: {
+            VStack(spacing: 1) {
+                Image(systemName: "character").font(.system(size: 12, weight: .semibold))
+                RoundedRectangle(cornerRadius: 1).fill(s.color.map(Color.init(nsColor:)) ?? Color.primary).frame(width: 14, height: 3)
+            }.frame(width: 26, height: 26)
+        }
+        .buttonStyle(.borderless).help("Text colour")
+        .popover(isPresented: $colors, arrowEdge: .top) {
+            SwatchGrid(title: "Text colour", colors: NoteStyle.textColors, selected: s.color, noneLabel: "Default") { c in
+                controller.run { $0.setTextColor(c) }; colors = false
+            }
+        }
+    }
+
+    var highlightButton: some View {
+        Button { highlights.toggle() } label: {
+            Image(systemName: "highlighter").font(.system(size: 13)).foregroundStyle(s.highlight.map(Color.init(nsColor:)) ?? Color.primary).frame(width: 26, height: 26)
+        }
+        .buttonStyle(.borderless).help("Highlighter (⌃⌘H)")
+        .popover(isPresented: $highlights, arrowEdge: .top) {
+            SwatchGrid(title: "Highlighter", colors: NoteStyle.highlightColors, selected: s.highlight, noneLabel: "None") { c in
+                controller.run { $0.setHighlight(c) }; highlights = false
+            }
+        }
+    }
+
+    var moreMenu: some View {
+        Menu {
+            Button("Inline Code") { controller.run { $0.toggleInlineCode() } }
+            Button("Link to Another Note") { controller.run { $0.insertWikiLink() } }
+            Button("Insert Date") { controller.run { $0.insertPlain(Date().formatted(date: .long, time: .omitted)) } }
+            Divider()
+            Button("Indent") { controller.run { $0.indent(1) } }
+            Button("Outdent") { controller.run { $0.indent(-1) } }
+            Divider()
+            Button("Align Left") { controller.run { $0.setAlignment(.natural) } }
+            Button("Centre") { controller.run { $0.setAlignment(.center) } }
+            Button("Align Right") { controller.run { $0.setAlignment(.right) } }
+            Divider()
+            Button("Move Line Up") { controller.run { $0.moveLines(up: true) } }
+            Button("Move Line Down") { controller.run { $0.moveLines(up: false) } }
+            Divider()
+            Button("Clear Formatting") { controller.run { $0.clearFormatting() } }
+        } label: { Image(systemName: "ellipsis.circle") }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More formatting").frame(width: 26)
+    }
+
+    var sep: some View { Divider().frame(height: 16).padding(.horizontal, 4) }
+
+    func active(_ on: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous).fill(on ? scheme.primary.opacity(0.18) : .clear)
+    }
+
+    func tool(_ symbol: String, _ help: String, _ on: Bool, _ f: @escaping (NoteTextView) -> Void) -> some View {
+        Button { controller.run(f) } label: {
+            Image(systemName: symbol).frame(width: 26, height: 26).foregroundStyle(on ? scheme.primary : Color.primary)
+        }
+        .buttonStyle(.borderless).help(help)
+        .background(active(on))
+    }
+
+    var linkEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Link").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            TextField("https://", text: $url).textFieldStyle(.roundedBorder).frame(width: 260).onSubmit(applyLink)
+            HStack {
+                if s.link != nil { Button("Remove Link") { controller.run { $0.setLink(nil) }; linking = false } }
+                Spacer()
+                Button("Cancel") { linking = false }
+                Button("Apply", action: applyLink).keyboardShortcut(.defaultAction).disabled(NoteLinks.url(url) == nil)
+            }
+        }
+        .padding(14)
+    }
+
+    func applyLink() {
+        guard let u = NoteLinks.url(url) else { return }
+        controller.run { $0.setLink(u) }
+        linking = false
+    }
+}
+
+enum NoteLinks {
+    /// A web address from what was typed ("dayline.app" → https://dayline.app). Only web and mail links.
+    static func url(_ s0: String) -> URL? {
+        let s = s0.trimmingCharacters(in: .whitespaces)
+        guard !s.isEmpty, !s.contains(" ") else { return nil }
+        // "javascript:…", "file:…" and other schemes are never links ("localhost:8080" is a host and port).
+        if let m = s.range(of: "^[a-zA-Z][a-zA-Z0-9+.-]*:(?![0-9])", options: .regularExpression),
+           !["http:", "https:", "mailto:"].contains(s[m].lowercased()) { return nil }
+        let withScheme = s.contains("://") || s.hasPrefix("mailto:") ? s : "https://" + s
+        guard let u = URL(string: withScheme), let scheme = u.scheme?.lowercased(), ["http", "https", "mailto"].contains(scheme) else { return nil }
+        if scheme != "mailto", (u.host ?? "").isEmpty { return nil }
+        return u
+    }
+}
+
+/// A grid of colour swatches with a "none" choice.
+struct SwatchGrid: View {
+    let title: String
+    let colors: [NSColor]
+    let selected: NSColor?
+    let noneLabel: String
+    let pick: (NSColor?) -> Void
+    @Environment(\.scheme) private var scheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 8), count: 5), spacing: 8) {
+                Button { pick(nil) } label: {
+                    ZStack {
+                        Circle().strokeBorder(Color.primary.opacity(0.3), lineWidth: 1)
+                        Image(systemName: "slash.circle").font(.system(size: 14)).foregroundStyle(.secondary)
+                    }
+                    .frame(width: 26, height: 26)
+                    .overlay(Circle().strokeBorder(selected == nil ? scheme.primary : .clear, lineWidth: 2).padding(-3))
+                }
+                .buttonStyle(.plain).help(noneLabel)
+                ForEach(colors.indices, id: \.self) { i in
+                    let c = colors[i]
+                    Button { pick(c) } label: {
+                        Circle().fill(Color(nsColor: c)).frame(width: 26, height: 26)
+                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.15), lineWidth: 1))
+                            .overlay(Circle().strokeBorder(selected.map { $0.isClose(to: c) } == true ? scheme.primary : .clear, lineWidth: 2).padding(-3))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(14)
     }
 }

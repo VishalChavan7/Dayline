@@ -154,6 +154,32 @@ class PhoneSizeScreenshotTest(private val device: Device) {
         )
     }
 
+    @Test fun noteBlocks() = render("18b_note_blocks", scrolled = false) {
+        val body = androidx.compose.runtime.remember {
+            com.dayline.app.ui.notes.NoteBodyModel().apply {
+                load("<p><span style=\"font-size: 21.0px;\"><b>Goals</b></span></p><p>Ship the <b>new editor</b> with <span style=\"color: rgba(26, 115, 232, 1.0);\">colours</span>. See [[Release notes]].</p>" +
+                    "<blockquote><p>Simple things should be simple.</p></blockquote><div class=\"callout\" data-kind=\"tip\"><p>Tables and code blocks sync with the Mac.</p></div>" +
+                    "<pre><code class=\"language-kotlin\">val note = Note(title = \"Hello\")</code></pre>" +
+                    "<table><tr><th>Platform</th><th>Version</th></tr><tr><td>Android</td><td>1.1.4</td></tr><tr><td>Mac</td><td>1.3.2</td></tr></table><hr><p>Done.</p>")
+            }
+        }
+        com.dayline.app.ui.notes.NoteEditorContent(
+            com.dayline.app.ui.notes.NoteEditorState(loading = false, note = com.dayline.app.core.model.Note(id = 9, title = "Launch plan", category = "work/launch")),
+            body, linkedTask = null, linkedProject = null, actions = com.dayline.app.ui.notes.NoteEditorActions(),
+        )
+    }
+    @Test fun noteLocked() = render("18c_note_locked") {
+        val body = androidx.compose.runtime.remember { com.dayline.app.ui.notes.NoteBodyModel().apply { load("<p>secret</p>") } }
+        com.dayline.app.ui.notes.NoteEditorContent(
+            com.dayline.app.ui.notes.NoteEditorState(loading = false, note = com.dayline.app.core.model.Note(id = 9, title = "Bank details", locked = true)),
+            body, linkedTask = null, linkedProject = null, actions = com.dayline.app.ui.notes.NoteEditorActions(),
+        )
+    }
+    @Test fun notesTrash() = render("17b_notes_trash") {
+        val trashed = SampleData.notesState().notes.take(2).map { it.copy(trashedAt = java.time.Instant.EPOCH) }
+        com.dayline.app.ui.notes.NotesContent(SampleData.notesState().copy(notes = trashed, view = "trash", counts = mapOf("trash" to 2, "todo" to 1, "pinned" to 1)), com.dayline.app.ui.notes.NotesActions())
+    }
+
     @Test fun navBar() = render("16_nav_bar") {
         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.BottomCenter) {
             com.dayline.app.ui.components.DaylineNavBar(

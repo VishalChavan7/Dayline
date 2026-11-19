@@ -161,7 +161,15 @@ public struct Note: Identifiable, Hashable, Sendable {
     public var color: Int32 = 0
     public var createdAt = Date(timeIntervalSince1970: 0)
     public var updatedAt = Date(timeIntervalSince1970: 0)
+    /// Set when archived: out of the main list, still in Archive and search.
+    public var archivedAt: Date?
+    /// Set when in Trash; stays there until restored or deleted for good.
+    public var trashedAt: Date?
+    /// Locked notes hide their text until unlocked with Touch ID or the Mac's password.
+    public var locked = false
     public init(id: Int64, title: String) { self.id = id; self.title = title }
+    public var isArchived: Bool { archivedAt != nil }
+    public var isTrashed: Bool { trashedAt != nil }
 }
 
 public struct FocusSession: Hashable, Sendable {
