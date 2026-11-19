@@ -162,13 +162,14 @@ final class SyncService: ObservableObject {
             store.replaceAll(with: decoded, keepSafetyCopy: false)
             pulled = true
         }
+        // What this round sends. Edits made while it uploads aren't in it, so they count as new next round.
+        let after = store.data
         var version = remote.version
         if work.2 {
             version = try await drive.update(remote.id, merged).version
             pushed = true
         }
         try? merged.write(to: baseURL, options: .atomic)
-        let after = store.data
         localHash = await Task.detached(priority: .utility) { BackupCodec.fingerprint(after) }.value
         remoteVersion = version
         return pulled && pushed ? "Merged changes from your phone" : pulled ? "Updated from your phone" : pushed ? "Synced" : "Up to date"

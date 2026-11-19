@@ -207,13 +207,15 @@ class GoogleSync @Inject constructor(
             backup.importJson(merged.toString(), keepSafetyCopy = false)
             outcome = SyncOutcome.DOWNLOADED
         }
+        // What this round sends. Edits made while it uploads aren't in it, so they count as new next round.
+        val sentHash = if (outcome == SyncOutcome.DOWNLOADED) fingerprint(backup.exportJson()) else localHash
         var version = remote.version
         if (mergedCanon != SyncMerge.canon(withoutStamp(remoteJson))) {
             version = drive.update(remote.id, merged.toString(2)).version
             outcome = if (outcome == SyncOutcome.DOWNLOADED) SyncOutcome.MERGED else SyncOutcome.UPLOADED
         }
         baseFile().writeText(merged.toString())
-        settings.recordSync(fingerprint(backup.exportJson()), version, now)
+        settings.recordSync(sentHash, version, now)
         return outcome
     }
 

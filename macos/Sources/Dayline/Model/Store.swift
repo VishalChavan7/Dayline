@@ -494,12 +494,17 @@ final class Store: ObservableObject {
             n.updatedAt = now
             data.notes[i] = n
         } else {
-            n.id = data.nextId(data.notes, \.id); n.createdAt = now; n.updatedAt = now
+            n.id = Store.newNoteId(after: data.nextId(data.notes, \.id)); n.createdAt = now; n.updatedAt = now
             data.notes.append(n)
         }
         changed()
         return n.id
     }
+
+    /// Ids for new notes come from the clock (milliseconds × 1000 plus a random part), so a note made on
+    /// the phone at the same time never gets the same id. With "highest id + 1" both devices could pick
+    /// the same one, and a sync then had to give one of the notes a new id.
+    static func newNoteId(after next: Int64) -> Int64 { max(next, Date().epochMillis * 1000 + Int64.random(in: 0..<1000)) }
 
     func deleteNote(_ id: Int64) { data.notes.removeAll { $0.id == id }; changed() }
 

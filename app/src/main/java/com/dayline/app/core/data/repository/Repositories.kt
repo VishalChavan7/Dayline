@@ -163,12 +163,20 @@ class NoteRepository @Inject constructor(private val db: DaylineDatabase, privat
         val now = time.now()
         // Like Keep, a note may have no title; lists and previews fall back to its text.
         val entity = note.copy(
+            id = if (note.id == 0L) newNoteId() else note.id,
             createdAt = if (note.id == 0L) now else note.createdAt,
             updatedAt = now,
         ).toEntity()
-        val rowId = dao.upsert(entity)
-        return if (note.id != 0L) note.id else rowId
+        dao.upsert(entity)
+        return entity.id
     }
+
+    /**
+     * Ids for new notes come from the clock (milliseconds × 1000 plus a random part), so a note made on
+     * the Mac at the same time never gets the same id. With "next id" both devices could pick the same
+     * one, and a sync then had to give one of the notes a new id. Same rule as the Mac.
+     */
+    private fun newNoteId(): Long = System.currentTimeMillis() * 1000 + kotlin.random.Random.nextLong(1000)
 
     /** Deletes for good. Notes normally go to Trash first ([trash]). */
     suspend fun delete(id: Long) = dao.delete(id)

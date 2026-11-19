@@ -151,6 +151,41 @@ enum NotesSelfTest {
             for id in [mine, newId] { store.deleteNote(id) }
         } else { expect(false, "note for the renumber test") }
 
+        // A new note with text and a tag but no title is saved once, not copied.
+        func tagField(_ v: NSView) -> NSTextField? {
+            if let t = v as? NSTextField, t.isEditable, (t.placeholderString ?? t.placeholderAttributedString?.string) == "Add #tag" { return t }
+            for sub in v.subviews { if let t = tagField(sub) { return t } }
+            return nil
+        }
+        for (label, quick, inText) in [("after the first save", false, false), ("before the first save", true, false), ("written in the text", false, true)] {
+            let before = Set(store.data.notes.map(\.id))
+            ui.newNote()
+            try? await Task.sleep(for: .seconds(0.8))
+            if let tv = EditorHub.shared.current {
+                window.makeFirstResponder(tv)
+                tv.insertText("Body without a title \(label)" + (inText ? " #sttag" : ""), replacementRange: tv.selectedRange())
+            }
+            try? await Task.sleep(for: .seconds(quick ? 0.2 : 1.2))
+            if inText {
+            } else if let tf = window.contentView.flatMap(tagField) {
+                window.makeFirstResponder(tf)
+                tf.currentEditor()?.insertText("sttag")
+                tf.currentEditor()?.insertNewline(nil)
+            } else { expect(false, "tag field found") }
+            try? await Task.sleep(for: .seconds(1.5))
+            if let tv = EditorHub.shared.current {
+                window.makeFirstResponder(tv)
+                tv.insertText(" more", replacementRange: NSRange(location: (tv.string as NSString).length, length: 0))
+            }
+            try? await Task.sleep(for: .seconds(1.5))
+            ui.close()
+            try? await Task.sleep(for: .seconds(0.4))
+            let made = store.data.notes.filter { !before.contains($0.id) }
+            expect(made.count == 1 && made.first?.category == "sttag" && made.first.map { NoteCodec.plainText($0.body).contains("more") && $0.id > 1_000_000_000_000_000 } == true,
+                   "untitled note with a tag \(label) is saved once (\(made.map { "\($0.id) [\($0.category ?? "")] \(NoteCodec.plainText($0.body))" }))")
+            for n in made { store.deleteNote(n.id) }
+        }
+
         // Copies left by older versions: same creation time; the newest edit stays, the rest go to Trash.
         var c1 = Note(id: 0, title: "ST Copy"); c1.body = "<p>v1</p>"
         let c1Id = store.save(c1)
