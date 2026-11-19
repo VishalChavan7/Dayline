@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The pictures on empty pages (drawn by tools/empty-art/gen.py, the same as on the phone).
 enum ArtKind: String {
-    case inbox, calendar, checklist, search, sprout, notebook, journal, chart, hello
+    case inbox, calendar, checklist, trophy, search, sprout, notebook, journal, chart, hello
 
     /// Picks the picture that fits an SF Symbol name used by older call sites.
     static func forSymbol(_ s: String) -> ArtKind {
@@ -25,11 +25,12 @@ struct EmptyArt: View {
     /// Width; the picture keeps the proportions of its canvas (EmptyArtData.width × height).
     var size: CGFloat = 320
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scheme) private var scheme
 
     var body: some View {
         let dark = colorScheme == .dark
         let elements = ArtShapes.scene(kind)
-        var colors: [Character: Color] = [:]
+        var colors: [Character: Color] = ["a": scheme.primary.opacity(dark ? 0.85 : 0.8)]
         for (role, c) in EmptyArtData.palette { colors[role] = Color(hex: dark ? c.dark : c.light) }
         let palette = colors
         return Canvas { ctx, sz in

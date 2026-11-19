@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Download for Android" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white"></a>
-  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.3"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
+  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.4"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
   <img alt="Offline first" src="https://img.shields.io/badge/offline-first-1757D0">
   <img alt="No ads, no tracking" src="https://img.shields.io/badge/ads%20%26%20tracking-none-555">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/f7b61f04-65f1-4bd7-b25c-8e7d26689c76
 | | Get it | Needs |
 |---|---|---|
 | **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
-| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.3): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
+| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.4): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
 
 Both apps update themselves after you install them.
 

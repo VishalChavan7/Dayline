@@ -159,7 +159,7 @@ enum NotesSelfTest {
         expect(NotesFilter.views.map(\.title) == ["Notes", "Today", "Locked", "Pinned", "Archive", "Trash"], "note lists")
 
         // Empty-page pictures
-        for k in [ArtKind.inbox, .calendar, .checklist, .search, .sprout, .notebook, .journal, .chart, .hello] {
+        for k in [ArtKind.inbox, .calendar, .checklist, .trophy, .search, .sprout, .notebook, .journal, .chart, .hello] {
             let els = ArtShapes.scene(k)
             expect(els.count >= 5 && els.allSatisfy { !$0.path.isEmpty } && els.contains { $0.stroke == "i" && $0.path.boundingRect.width > 30 },
                    "picture \(k.rawValue) (\(els.count) parts)")

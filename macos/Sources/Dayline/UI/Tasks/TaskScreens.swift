@@ -74,7 +74,7 @@ struct CompletedView: View {
         let groups = Dictionary(grouping: done) { $0.completedAt.map { Day($0) } ?? Day(epochDay: 0) }
         let days = groups.keys.sorted(by: >)
         TaskScreen(title: "Completed", subtitle: "\(done.count) completed", quickAdd: nil,
-                   isEmpty: done.isEmpty, empty: EmptyState(symbol: "checkmark.circle", title: "Nothing completed yet", message: "Finished tasks are kept here.")) {
+                   isEmpty: done.isEmpty, empty: EmptyState(art: .trophy, title: "Nothing completed yet", message: "Finished tasks are kept here.")) {
             ForEach(days.prefix(60), id: \.self) { d in
                 TaskSection(title: d.epochDay == 0 ? "Earlier" : Formats(store: store).date(d), tasks: groups[d] ?? [], showDate: false)
             }

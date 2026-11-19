@@ -10,93 +10,98 @@ struct StatsView: View {
 
     var body: some View {
         let r = StatsCalculator.report(store.data, period: period, anchor: anchor, today: store.today, weekStart: store.weekStart)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                ScreenTitle(title: "Statistics", subtitle: rangeText(r))
-                HStack {
-                    Segmented(options: StatsPeriod.allCases, selection: $period) { $0.label }
-                    Spacer()
-                    IconButton(symbol: "chevron.left", help: "Previous") { anchor = shift(-1) }
-                    Text(rangeText(r)).font(.system(size: 13, weight: .semibold)).frame(minWidth: 180)
-                    IconButton(symbol: "chevron.right", help: "Next") { anchor = shift(1) }.disabled(!(r.end < store.today))
-                    Button("Now") { anchor = store.today }.buttonStyle(.tonal)
-                }
-
-                if !r.hasAnyData {
-                    EmptyState(symbol: "chart.bar", title: "No activity yet", message: "Complete tasks, check in habits or run a focus session, and your trends show up here.")
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
-                        tile("Completed", "\(r.completed)", change: r.completedChange, sub: r.completedChange == nil ? "tasks this \(period.label.lowercased())" : "vs last \(period.label.lowercased())", symbol: "checkmark.circle.fill", color: StatusColor.success)
-                        tile("Completion rate", "\(Int((r.completionRate * 100).rounded()))%", sub: "\(r.remaining) still due", symbol: "percent", color: .accentColor)
-                        tile("Focus", Formats.minutes(r.focusMinutes), change: r.focusChange, sub: "\(r.focusSessions) sessions · avg \(r.averageSessionMinutes)m", symbol: "timer", color: scheme.tertiary)
-                        tile("Overdue now", "\(r.overdueNow)", sub: "\(r.overdueInPeriod) missed this \(period.label.lowercased())", symbol: "exclamationmark.circle.fill", color: StatusColor.overdue)
-                        tile("Habits", "\(Int((r.habitConsistency * 100).rounded()))%", sub: "\(r.habitCheckIns) check-ins", symbol: "flame.fill", color: StatusColor.streak)
+        ZStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ScreenTitle(title: "Statistics", subtitle: rangeText(r))
+                    HStack {
+                        Segmented(options: StatsPeriod.allCases, selection: $period) { $0.label }
+                        Spacer()
+                        IconButton(symbol: "chevron.left", help: "Previous") { anchor = shift(-1) }
+                        Text(rangeText(r)).font(.system(size: 13, weight: .semibold)).frame(minWidth: 180)
+                        IconButton(symbol: "chevron.right", help: "Next") { anchor = shift(1) }.disabled(!(r.end < store.today))
+                        Button("Now") { anchor = store.today }.buttonStyle(.tonal)
                     }
 
-                    HStack(alignment: .top, spacing: 12) {
-                        chartCard("Tasks completed") {
-                            Chart(r.completedSeries, id: \.date) { v in
-                                BarMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Completed", v.value)).foregroundStyle(StatusColor.success.gradient).cornerRadius(3)
+                    if r.hasAnyData {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
+                            tile("Completed", "\(r.completed)", change: r.completedChange, sub: r.completedChange == nil ? "tasks this \(period.label.lowercased())" : "vs last \(period.label.lowercased())", symbol: "checkmark.circle.fill", color: StatusColor.success)
+                            tile("Completion rate", "\(Int((r.completionRate * 100).rounded()))%", sub: "\(r.remaining) still due", symbol: "percent", color: .accentColor)
+                            tile("Focus", Formats.minutes(r.focusMinutes), change: r.focusChange, sub: "\(r.focusSessions) sessions · avg \(r.averageSessionMinutes)m", symbol: "timer", color: scheme.tertiary)
+                            tile("Overdue now", "\(r.overdueNow)", sub: "\(r.overdueInPeriod) missed this \(period.label.lowercased())", symbol: "exclamationmark.circle.fill", color: StatusColor.overdue)
+                            tile("Habits", "\(Int((r.habitConsistency * 100).rounded()))%", sub: "\(r.habitCheckIns) check-ins", symbol: "flame.fill", color: StatusColor.streak)
+                        }
+
+                        HStack(alignment: .top, spacing: 12) {
+                            chartCard("Tasks completed") {
+                                Chart(r.completedSeries, id: \.date) { v in
+                                    BarMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Completed", v.value)).foregroundStyle(StatusColor.success.gradient).cornerRadius(3)
+                                }
+                            }
+                            chartCard("Focus minutes") {
+                                Chart(r.focusSeries, id: \.date) { v in
+                                    BarMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Minutes", v.value)).foregroundStyle(scheme.tertiary).cornerRadius(3)
+                                }
                             }
                         }
-                        chartCard("Focus minutes") {
-                            Chart(r.focusSeries, id: \.date) { v in
-                                BarMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Minutes", v.value)).foregroundStyle(scheme.tertiary).cornerRadius(3)
+                        HStack(alignment: .top, spacing: 12) {
+                            chartCard("Overdue over time") {
+                                Chart(r.overdueSeries, id: \.date) { v in
+                                    AreaMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Overdue", v.value)).foregroundStyle(StatusColor.overdue.opacity(0.2))
+                                    LineMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Overdue", v.value)).foregroundStyle(StatusColor.overdue)
+                                }
+                                .chartXAxis { AxisMarks(values: .stride(by: .day, count: max(1, r.overdueSeries.count / 7))) { _ in AxisGridLine(); AxisValueLabel(format: .dateTime.day().month(.abbreviated)) } }
                             }
-                        }
-                    }
-                    HStack(alignment: .top, spacing: 12) {
-                        chartCard("Overdue over time") {
-                            Chart(r.overdueSeries, id: \.date) { v in
-                                AreaMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Overdue", v.value)).foregroundStyle(StatusColor.overdue.opacity(0.2))
-                                LineMark(x: .value("Day", v.date.date(), unit: .day), y: .value("Overdue", v.value)).foregroundStyle(StatusColor.overdue)
-                            }
-                            .chartXAxis { AxisMarks(values: .stride(by: .day, count: max(1, r.overdueSeries.count / 7))) { _ in AxisGridLine(); AxisValueLabel(format: .dateTime.day().month(.abbreviated)) } }
-                        }
-                        chartCard("By priority") {
-                            let items = Priority.allCases.reversed().map { ($0, r.priorityDistribution[$0] ?? 0) }.filter { $0.1 > 0 }
-                            if items.isEmpty { Text("No tasks due in this period.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
-                            else {
-                                let total = items.reduce(0) { $0 + $1.1 }
-                                HStack(spacing: 28) {
-                                    ZStack {
-                                        Chart(items, id: \.0) { p, n in
-                                            SectorMark(angle: .value("Tasks", n), innerRadius: .ratio(0.62), angularInset: 1.5)
-                                                .foregroundStyle(p.color).cornerRadius(3)
-                                        }
-                                        .chartLegend(.hidden)
-                                        VStack(spacing: 0) {
-                                            Text("\(total)").font(.system(size: 22, weight: .semibold).monospacedDigit())
-                                            Text("tasks").font(.caption).foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .frame(width: 150, height: 150)
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        ForEach(items, id: \.0) { p, n in
-                                            HStack(spacing: 8) {
-                                                Circle().fill(p.color).frame(width: 9, height: 9)
-                                                Text(p.label).font(.callout)
-                                                Spacer(minLength: 12)
-                                                Text("\(n)").font(.callout.weight(.semibold).monospacedDigit())
+                            chartCard("By priority") {
+                                let items = Priority.allCases.reversed().map { ($0, r.priorityDistribution[$0] ?? 0) }.filter { $0.1 > 0 }
+                                if items.isEmpty { Text("No tasks due in this period.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
+                                else {
+                                    let total = items.reduce(0) { $0 + $1.1 }
+                                    HStack(spacing: 28) {
+                                        ZStack {
+                                            Chart(items, id: \.0) { p, n in
+                                                SectorMark(angle: .value("Tasks", n), innerRadius: .ratio(0.62), angularInset: 1.5)
+                                                    .foregroundStyle(p.color).cornerRadius(3)
+                                            }
+                                            .chartLegend(.hidden)
+                                            VStack(spacing: 0) {
+                                                Text("\(total)").font(.system(size: 22, weight: .semibold).monospacedDigit())
+                                                Text("tasks").font(.caption).foregroundStyle(.secondary)
                                             }
                                         }
+                                        .frame(width: 150, height: 150)
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            ForEach(items, id: \.0) { p, n in
+                                                HStack(spacing: 8) {
+                                                    Circle().fill(p.color).frame(width: 9, height: 9)
+                                                    Text(p.label).font(.callout)
+                                                    Spacer(minLength: 12)
+                                                    Text("\(n)").font(.callout.weight(.semibold).monospacedDigit())
+                                                }
+                                            }
+                                        }
+                                        .frame(maxWidth: 160)
                                     }
-                                    .frame(maxWidth: 160)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+                        Card {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Completed tasks — last 18 weeks").font(.headline)
+                                Heatmap(values: r.heatmap)
                             }
                         }
                     }
-                    Card {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Completed tasks — last 18 weeks").font(.headline)
-                            Heatmap(values: r.heatmap)
-                        }
-                    }
                 }
+                .padding(.horizontal, Page.h).padding(.top, Page.top).padding(.bottom, Page.bottom)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, Page.h).padding(.top, Page.top).padding(.bottom, Page.bottom)
-            .frame(maxWidth: .infinity)
+            // Centred on the page like every other empty page (not under the period controls).
+            if !r.hasAnyData {
+                EmptyState(art: .chart, title: "No activity yet", message: "Complete tasks, check in habits or run a focus session, and your trends show up here.")
+                    .padding(.top, 60)
+            }
         }
         .navigationTitle("Statistics")
     }

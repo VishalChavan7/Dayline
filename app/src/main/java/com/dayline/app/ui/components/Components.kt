@@ -327,7 +327,7 @@ fun EmptyState(
     message: String,
     modifier: Modifier = Modifier,
     /** Where the icon + text are centred, as a fraction of the window height. */
-    centerAt: Float = 0.55f,
+    centerAt: Float = 0.6f,
     action: (@Composable () -> Unit)? = null,
 ) {
     // Every empty state sits at the same spot on screen: its icon + text are centred on the
@@ -376,8 +376,8 @@ fun EmptyState(
     }
 }
 
-/** Width of the picture on empty pages (it fits a 320 dp wide phone with the page's margins). */
-private val ART_WIDTH = 256.dp
+/** Width of the picture on empty pages. */
+private val ART_WIDTH = 224.dp
 
 /** Compact inline empty message inside cards. */
 @Composable
