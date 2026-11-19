@@ -206,12 +206,6 @@ public enum NoteFormat {
         return !t.isEmpty && wikiLinks(text).contains { $0.lowercased() == t }
     }
 
-    public static func hasOpenTodo(_ body: String) -> Bool {
-        let d = NoteCodec.decode(body)
-        if d.checklist.contains(where: { !$0.done && !$0.text.isBlank }) { return true }
-        return NoteCodec.plainText(d.html).components(separatedBy: "\n").contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("\u{2610}") }
-    }
-
     public struct Stats: Equatable, Sendable {
         public let words: Int, characters: Int, charactersNoSpaces: Int, paragraphs: Int, readMinutes: Int
     }

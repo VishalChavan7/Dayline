@@ -128,8 +128,6 @@ check(NoteFormat.tagMatches("work/meetings", "work") && NoteFormat.tagMatches("w
 eq(NoteCodec.labels("See #work/meetings and #home, not a#b or &#39;"), ["work/meetings", "home"], "nested labels")
 eq(NoteFormat.wikiLinks("[[Plan]] and [[ Ideas 2026 |alias]] and [[plan]] and [[]] [[a\nb]]"), ["Plan", "Ideas 2026"], "wiki links")
 check(NoteFormat.linksTo("see [[My Note]]", title: "my note") && !NoteFormat.linksTo("see [[My Note]]", title: ""), "links to")
-check(NoteFormat.hasOpenTodo("<p>\u{2610} buy milk</p>") && !NoteFormat.hasOpenTodo("<p>\u{2611}\u{FE0E} bought</p>"), "open todo in text")
-check(NoteFormat.hasOpenTodo(NoteCodec.encode("<p>x</p>", checklist: [CheckItem(text: "y")])) && !NoteFormat.hasOpenTodo(NoteCodec.encode("<p>x</p>", checklist: [CheckItem(text: "y", done: true)])), "open todo in checklist")
 let st = NoteFormat.stats(title: "T", body: "<p>Hello world, it's me.</p><p>Second line</p>")
 eq([st.words, st.paragraphs, st.readMinutes], [6, 2, 1], "stats")
 eq(NoteFormat.stats(title: "", body: "").readMinutes, 0, "empty stats")

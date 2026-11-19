@@ -7,6 +7,7 @@ import DaylineEditor
 struct NotesView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var ui: NotesUI
+    @EnvironmentObject var nav: Navigator
     @State private var editingLabel: String?
     @State private var query = ""
     @State private var confirmEmptyTrash = false
@@ -14,6 +15,9 @@ struct NotesView: View {
     var body: some View {
         GeometryReader { geo in
             panes(width: geo.size.width)
+                .background(SwipeCatcher { leftward in
+                    if leftward { ui.collapse(nav, shown: shown(width: geo.size.width)) } else { ui.expand(nav) }
+                })
         }
         .navigationTitle("Notes")
         .sheet(item: Binding(get: { editingLabel.map(LabelRef.init) }, set: { editingLabel = $0?.name })) { ref in
@@ -28,10 +32,17 @@ struct NotesView: View {
     }
 
     /// The panes that fit: the editor keeps at least 440 points; the tags column, then the list, give way first.
-    func panes(width: CGFloat) -> some View {
+    /// Columns shown at this width: 1 = editor, 2 = list and editor, 3 = tags, list and editor.
+    func shown(width: CGFloat) -> Int {
         let panel: CGFloat = ui.panel != nil && ui.selected != nil ? 250 : 0
         let showList = ui.layout >= 2 && width - panel - 300 >= 440
         let showTags = ui.layout >= 3 && showList && width - panel - 300 - 200 >= 440
+        return showTags ? 3 : showList ? 2 : 1
+    }
+
+    func panes(width: CGFloat) -> some View {
+        let columns = shown(width: width)
+        let showList = columns >= 2, showTags = columns >= 3
         return HStack(spacing: 0) {
             if showTags {
                 NotesSidebar(editingLabel: $editingLabel).frame(width: 200)
@@ -44,7 +55,7 @@ struct NotesView: View {
             HStack(spacing: 0) {
                 Group {
                     if let id = ui.selected {
-                        NotePane(noteId: id, presetLabel: presetLabel).id(ui.token)
+                        NotePane(noteId: id, presetLabel: presetLabel, shownColumns: columns).id(ui.token)
                     } else {
                         EmptyState(art: .notebook, title: store.noteCount == 0 ? "Your notebook is empty" : "Pick a note",
                                    message: "Write with headings, lists, tables and checklists. Add #tags (even #work/meetings) to keep things tidy — they sync with your phone.",
@@ -76,11 +87,13 @@ struct NotesView: View {
                 HStack(alignment: .bottom) {
                     ScreenTitle(title: ui.filter.title, subtitle: "\(shown.count) note\(shown.count == 1 ? "" : "s")")
                     Spacer()
-                    sortMenu
-                    if ui.filter == .trash {
-                        IconButton(symbol: "trash.slash", help: "Empty Trash", size: 30) { confirmEmptyTrash = true }.disabled(shown.isEmpty)
-                    } else {
-                        IconButton(symbol: "square.and.pencil", help: "New note (⌥⌘N)", size: 30) { ui.newNote() }
+                    HStack(spacing: 2) {
+                        sortMenu
+                        if ui.filter == .trash {
+                            IconButton(symbol: "trash.slash", help: "Empty Trash", size: 30) { confirmEmptyTrash = true }.disabled(shown.isEmpty)
+                        } else {
+                            IconButton(symbol: "square.and.pencil", help: "New note (⌥⌘N)", size: 30) { ui.newNote() }
+                        }
                     }
                 }
                 .padding(.bottom, 4)
@@ -89,13 +102,13 @@ struct NotesView: View {
                 if ui.filter == .trash && !shown.isEmpty {
                     Text("Notes in Trash stay until you delete them or empty the Trash.").font(.caption).foregroundStyle(.secondary)
                 }
-                if !pinned.isEmpty {
-                    group("PINNED")
-                    ForEach(pinned) { n in row(n) }
-                }
-                if !others.isEmpty {
-                    if !pinned.isEmpty { group("OTHERS") }
-                    ForEach(others) { n in row(n) }
+                // One list with one identity per note, so a card moving between Pinned and Others
+                // is redrawn in its new place (two lists could leave a stale, still-selected copy).
+                ForEach(listRows(pinned: pinned, others: others)) { r in
+                    switch r {
+                    case .header(let title): group(title)
+                    case .note(let n): row(n)
+                    }
                 }
                 if shown.isEmpty { Text(emptyText).foregroundStyle(.secondary).padding(.top, 20) }
             }
@@ -109,7 +122,6 @@ struct NotesView: View {
         case .trash: return "Trash is empty."
         case .archive: return "Nothing archived. Archive notes you're done with to keep them out of the way."
         case .locked: return "No locked notes. Lock a note from its ⋯ menu."
-        case .todo: return "No notes with open checklist items."
         case .today: return "No notes written or edited today."
         default: return store.noteCount == 0 ? "No notes yet." : "No notes here."
         }
@@ -119,8 +131,8 @@ struct NotesView: View {
         Menu {
             Picker("Sort By", selection: $ui.sort) { ForEach(NoteSort.allCases, id: \.self) { Text($0.title).tag($0) } }
             Toggle("Pinned Notes First", isOn: $ui.pinnedFirst)
-        } label: { Image(systemName: "arrow.up.arrow.down").font(.system(size: 12, weight: .semibold)) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Sort notes")
+        } label: { IconMenuLabel(symbol: "arrow.up.arrow.down", size: 30) }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().help("Sort notes")
     }
 
     /// Lists and tags as chips when the sidebar is hidden.
@@ -139,6 +151,21 @@ struct NotesView: View {
         .padding(.bottom, 4)
     }
 
+    enum ListRow: Identifiable {
+        case header(String), note(Note)
+        var id: String { switch self { case .header(let t): "h-" + t; case .note(let n): "n-\(n.id)" } }
+    }
+
+    func listRows(pinned: [Note], others: [Note]) -> [ListRow] {
+        var rows: [ListRow] = []
+        if !pinned.isEmpty { rows.append(.header("PINNED")); rows += pinned.map(ListRow.note) }
+        if !others.isEmpty {
+            if !pinned.isEmpty { rows.append(.header("OTHERS")) }
+            rows += others.map(ListRow.note)
+        }
+        return rows
+    }
+
     func group(_ title: String) -> some View {
         Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).padding(.top, 8).padding(.leading, 2)
     }
@@ -154,13 +181,21 @@ struct NotesView: View {
 struct NoteActions: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var ui: NotesUI
-    let note: Note
+    /// The note as the menu was built for; actions read the store's current copy, because a
+    /// right-click menu can outlive a change (pinning from the editor, sync).
+    let shown: Note
+    init(note: Note) { shown = note }
+    var note: Note { store.note(shown.id) ?? shown }
     var body: some View {
         if note.trashedAt != nil {
             Button("Restore") { store.restoreNote(note.id) }
             Button("Delete Forever…", role: .destructive) { deleteForever() }
         } else {
-            Button(note.isPinned ? "Unpin" : "Pin") { store.setPinned(note: note.id, !note.isPinned) }
+            if note.isPinned {
+                Button("Unpin") { store.setPinned(note: shown.id, false) }
+            } else {
+                Button("Pin") { store.setPinned(note: shown.id, true) }
+            }
             Menu("Colour") { NoteColorItems(selected: note.color) { c in var m = note; m.color = c; store.save(m) } }
             Button(note.locked ? "Remove Lock…" : "Lock Note") { toggleLock() }
             Button(note.archivedAt != nil ? "Unarchive" : "Archive") {
@@ -215,7 +250,7 @@ struct NotesSidebar: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(NotesFilter.views, id: \.self) { f in
-                    item(f.title, symbol: f.symbol, count: f == .trash || f == .archive ? nil : store.count(f), on: ui.filter == f, depth: 0) { ui.filter = f }
+                    item(f.title, symbol: f.symbol, count: f == .trash || f == .archive ? nil : store.count(f), on: ui.filter == f, depth: 0, action: { ui.filter = f })
                         .dropDestination(for: String.self) { ids, _ in drop(ids, on: f) }
                 }
                 let tree = store.tagTree(sort: ui.tagSort)
@@ -245,36 +280,40 @@ struct NotesSidebar: View {
         nodes.flatMap { n in [n] + (ui.expandedTags.contains(n.path) ? flatten(n.children) : []) }
     }
 
+    /// A tag lines up with the lists above it (icon under icon); nested tags step in, and the
+    /// arrow that opens a tag's children sits at the end of the row.
     func tagRow(_ node: TagNode) -> some View {
-        HStack(spacing: 0) {
-            if !node.children.isEmpty {
-                Button {
-                    if ui.expandedTags.contains(node.path) { ui.expandedTags.remove(node.path) } else { ui.expandedTags.insert(node.path) }
-                } label: {
-                    Image(systemName: ui.expandedTags.contains(node.path) ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).frame(width: 14, height: 20).contentShape(Rectangle())
-                }.buttonStyle(.plain)
-            } else { Color.clear.frame(width: 14, height: 1) }
-            item(node.name, symbol: store.labelSymbol(node.path), count: store.count(.tag(node.path)), on: ui.filter == .tag(node.path), depth: node.depth) {
-                ui.filter = .tag(node.path)
-            }
+        item(node.name, symbol: store.labelSymbol(node.path), count: store.count(.tag(node.path)), on: ui.filter == .tag(node.path), depth: node.depth,
+             disclosure: node.children.isEmpty ? nil : ui.expandedTags.contains(node.path)) {
+            ui.filter = .tag(node.path)
+        } toggle: {
+            if ui.expandedTags.contains(node.path) { ui.expandedTags.remove(node.path) } else { ui.expandedTags.insert(node.path) }
         }
-        .padding(.leading, CGFloat(node.depth) * 14)
         .contextMenu {
             Button("Rename and Change Icon…") { editingLabel = node.path }
         }
     }
 
-    func item(_ title: String, symbol: String, count: Int?, on: Bool, depth: Int, action: @escaping () -> Void) -> some View {
+    /// `disclosure`: nil = no children, else whether they're shown.
+    func item(_ title: String, symbol: String, count: Int?, on: Bool, depth: Int, disclosure: Bool? = nil,
+              action: @escaping () -> Void, toggle: @escaping () -> Void = {}) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).frame(width: 16)
                     .foregroundStyle(on ? scheme.onPrimaryContainer : Color.secondary)
                 Text(title).font(.system(size: 13, weight: on ? .semibold : .regular)).lineLimit(1)
-                Spacer()
+                Spacer(minLength: 4)
                 if let count, count > 0 { Text("\(count)").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit() }
+                if let open = disclosure {
+                    Button(action: toggle) {
+                        Image(systemName: open ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+                            .frame(width: 16, height: 20).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).help(open ? "Hide nested tags" : "Show nested tags")
+                }
             }
-            .padding(.horizontal, 8).frame(height: 28)
+            .padding(.leading, 8 + CGFloat(depth) * 16).padding(.trailing, disclosure == nil ? 8 : 2).frame(height: 28)
             .foregroundStyle(on ? scheme.onPrimaryContainer : Color.primary)
             .background(RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(on ? scheme.primaryContainer : .clear))
             .contentShape(Rectangle())
@@ -348,8 +387,11 @@ struct NoteCard: View {
 struct NotePane: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var ui: NotesUI
+    @EnvironmentObject var services: Services
     let noteId: Int64
     var presetLabel: String?
+    /// Columns that fit beside the editor right now (see NotesView.shown).
+    var shownColumns: Int? = nil
     /// Journal entries: dated header, bookmark instead of pin, no colours or labels.
     var journal = false
     var promptTitle: String?
@@ -363,8 +405,15 @@ struct NotePane: View {
     @State private var loaded = false
     @State private var words = 0
     @State private var pendingSave: Task<Void, Never>?
+    /// Title, text and tags as last loaded or saved. While the editor still matches it, nothing was
+    /// edited here: the store's copy is the truth, so changes from the phone (sync) show up in an open
+    /// note instead of being saved over, and just looking at a note never saves it.
+    @State private var baseline = Snapshot()
+    struct Snapshot: Equatable { var title = "", body = "", category: String? = nil }
     @StateObject private var controller = RichTextController()
     @Environment(\.scheme) private var scheme
+    @AppStorage(NotePage.marginKey) private var margin = NotePage.defaultMargin
+    @AppStorage(NotePage.limitKey) private var limitWidth = true
 
     var trashed: Bool { note.trashedAt != nil }
     var lockedAway: Bool { note.locked && note.id != 0 && !ui.unlocked.contains(note.id) }
@@ -376,10 +425,15 @@ struct NotePane: View {
         .background((journal ? nil : NoteColors.color(note.color)?.opacity(0.35)) ?? scheme.card)
         .onAppear(perform: load)
         .onDisappear { save() }
-        .onChange(of: store.note(noteId)) { _, n in
+        .onChange(of: store.note(note.id == 0 ? noteId : note.id)) { _, n in
             // Pinned, locked, archived or restored from elsewhere (the list, a menu, sync).
-            guard let n, n.id == note.id else { return }
+            guard let n, n.id == note.id, n.id != 0 else { return }
+            if snapshot() == baseline && (n.title != note.title || n.body != note.body || n.category != note.category) {
+                reload(from: n)   // edited on the phone (or elsewhere) while open here
+                return
+            }
             note.isPinned = n.isPinned; note.locked = n.locked; note.archivedAt = n.archivedAt; note.trashedAt = n.trashedAt; note.color = n.color
+            note.updatedAt = n.updatedAt
         }
     }
 
@@ -422,12 +476,12 @@ struct NotePane: View {
                               systemImage: "photo.on.rectangle").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .padding(.horizontal, 48).padding(.top, 22).padding(.bottom, 8)
+                .padding(.horizontal, margin).padding(.top, 22).padding(.bottom, 16)
                 RichTextEditor(html: $html, controller: controller, editable: !trashed, zoom: ui.zoom, onOpenNote: openLinked)
-                    .padding(.horizontal, 48)
+                    .padding(.horizontal, margin)
                     .onChange(of: html) { _, _ in changed() }
             }
-            .frame(maxWidth: 820)
+            .frame(maxWidth: limitWidth ? NotePage.lineWidth + 2 * margin : .infinity)
             .frame(maxWidth: .infinity)
             if !trashed {
                 FormatBar(controller: controller)
@@ -440,14 +494,21 @@ struct NotePane: View {
 
     var toolbar: some View {
         HStack(spacing: 10) {
+            PaneButtons(ui: ui, nav: services.nav, shown: shownColumns)
             Button { ui.togglePanel(.info) } label: { Text(meta).font(.system(size: 12)).foregroundStyle(.tertiary).lineLimit(1) }
                 .buttonStyle(.plain).help("Statistics (⇧⌘I)")
             Spacer()
             if !journal && !trashed {
-                NoteColorButton(selected: note.color) { c in note.color = c; changed() }
+                NoteColorButton(selected: note.color) { c in
+                    note.color = c
+                    if note.id != 0, var m = store.note(note.id) { m.color = c; store.save(m) } else { changed() }
+                }
             }
             if !trashed {
-                Button { note.isPinned.toggle(); changed() } label: {
+                Button {
+                    note.isPinned.toggle()
+                    if note.id != 0 { store.setPinned(note: note.id, note.isPinned) } else { changed() }
+                } label: {
                     Image(systemName: journal ? (note.isPinned ? "bookmark.fill" : "bookmark") : (note.isPinned ? "pin.fill" : "pin"))
                 }.buttonStyle(.borderless).help(journal ? "Bookmark" : "Pin")
             }
@@ -540,13 +601,33 @@ struct NotePane: View {
     func load() {
         guard !loaded else { return }
         if noteId != 0, let n = store.note(noteId) { note = n }
-        let d = NoteCodec.decode(note.body)
-        html = d.html; checklist = d.checklist; media = d.media
-        labels = store.labels(of: note)
-        countWords()
+        fill(from: note)
         if noteId == 0, let presetLabel, presetLabel != "__pinned" { labels = [presetLabel] }
         if noteId == 0, journal, let promptTitle { note.title = promptTitle }
         loaded = true
+    }
+
+    func fill(from n: Note) {
+        let d = NoteCodec.decode(n.body)
+        html = d.html; checklist = d.checklist; media = d.media
+        labels = store.labels(of: n)
+        countWords()
+        baseline = snapshot(title: n.title)
+    }
+
+    /// Shows the store's copy (changed by sync) in place of what's on screen.
+    func reload(from n: Note) {
+        note = n
+        fill(from: n)
+    }
+
+    /// What the editor holds, in the store's format.
+    func snapshot(title: String? = nil) -> Snapshot {
+        let body = NoteCodec.encode(html, checklist: checklist, media: media)
+        let t = title ?? note.title
+        var all = labels
+        for l in NoteCodec.labelsOf(title: t, body: body) where !all.contains(l) { all.append(l) }
+        return Snapshot(title: t, body: body, category: all.isEmpty ? nil : all.joined(separator: ","))
     }
 
     /// Saves shortly after you stop typing (so sync picks it up), and when you leave.
@@ -563,6 +644,9 @@ struct NotePane: View {
     func save() {
         pendingSave?.cancel()
         guard loaded, !trashed, !lockedAway else { return }
+        // Nothing edited here: never write the copy shown back over a newer one.
+        let snap = snapshot()
+        if note.id != 0 && snap == baseline { return }
         // Deleted (here, from the list, or by sync) while open: don't bring it back.
         if note.id != 0 && store.note(note.id) == nil { return }
         var n = note
@@ -571,17 +655,42 @@ struct NotePane: View {
             n.archivedAt = current.archivedAt; n.trashedAt = current.trashedAt; n.locked = current.locked
             if current.trashedAt != nil { return }
         }
-        n.body = NoteCodec.encode(html, checklist: checklist, media: media)
-        var all = labels
-        for l in NoteCodec.labelsOf(title: n.title, body: n.body) where !all.contains(l) { all.append(l) }
-        n.category = all.isEmpty ? nil : all.joined(separator: ",")
+        n.body = snap.body
+        n.category = snap.category
         if n.id != 0, let current = store.note(n.id), current.title == n.title, current.body == n.body, current.category == n.category,
-           current.color == n.color, current.isPinned == n.isPinned { return }
+           current.color == n.color, current.isPinned == n.isPinned { baseline = snap; return }
         let id = store.save(n)
+        baseline = snap
         if id != 0 {
             note = store.note(id) ?? note
             if ui.selected == 0 || ui.selected == noteId { ui.selected = id }
         }
+    }
+}
+
+/// Page margins of the note editor (Settings → Notes), kept on this Mac.
+enum NotePage {
+    static let marginKey = "notePageMargin", limitKey = "notePageLimitWidth"
+    static let defaultMargin = 28.0
+    static let range = 0.0...120.0
+    /// Longest comfortable line when "Limit line length" is on.
+    static let lineWidth = 760.0
+}
+
+/// ‹‹ hides the next pane on the left (the app's sidebar first), ›› brings one back. Same as swiping.
+struct PaneButtons: View {
+    @ObservedObject var ui: NotesUI
+    @ObservedObject var nav: Navigator
+    var shown: Int?
+    var body: some View {
+        HStack(spacing: 2) {
+            Button { ui.collapse(nav, shown: shown) } label: { Image(systemName: "chevron.left.2").frame(width: 22, height: 22).contentShape(Rectangle()) }
+                .help("Hide a pane (swipe left with two fingers)").disabled(!ui.canCollapse(nav, shown: shown))
+            Button { ui.expand(nav) } label: { Image(systemName: "chevron.right.2").frame(width: 22, height: 22).contentShape(Rectangle()) }
+                .help("Show a pane (swipe right with two fingers)").disabled(!ui.canExpand(nav))
+        }
+        .buttonStyle(.borderless)
+        .font(.system(size: 11, weight: .semibold))
     }
 }
 
@@ -785,12 +894,7 @@ struct NoteColorButton: View {
     @Environment(\.scheme) private var scheme
 
     var body: some View {
-        Button { open.toggle() } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "paintpalette")
-                dot(selected, size: 12)
-            }
-        }
+        Button { open.toggle() } label: { Image(systemName: "paintpalette") }
         .buttonStyle(.borderless)
         .help("Colour")
         .popover(isPresented: $open, arrowEdge: .bottom) {

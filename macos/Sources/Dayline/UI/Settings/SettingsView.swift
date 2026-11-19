@@ -10,6 +10,7 @@ struct SettingsView: View {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
             RemindersSettings().tabItem { Label("Reminders", systemImage: "bell") }
             FocusSettings().tabItem { Label("Focus", systemImage: "timer") }
+            NotesSettings().tabItem { Label("Notes", systemImage: "note.text") }
             TagsSettings().tabItem { Label("Tags", systemImage: "number") }
             WidgetsSettings().tabItem { Label("Widgets", systemImage: "square.grid.2x2") }
             SyncSettings().tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
@@ -55,6 +56,32 @@ struct GeneralSettings: View {
             Toggle("Show Dayline in the menu bar", isOn: Binding(get: { UserDefaults.standard.object(forKey: "menuBarExtra") as? Bool ?? true },
                                                                     set: { UserDefaults.standard.set($0, forKey: "menuBarExtra"); store.objectWillChange.send() }))
             Text("These settings are shared with Dayline on your phone when sync is on.").font(.caption).foregroundStyle(.secondary)
+        }
+        .formStyle(.grouped)
+    }
+}
+
+struct NotesSettings: View {
+    @AppStorage(NotePage.marginKey) private var margin = NotePage.defaultMargin
+    @AppStorage(NotePage.limitKey) private var limitWidth = true
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Page margins") {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.right.and.line.vertical.and.arrow.left").foregroundStyle(.secondary)
+                        Slider(value: $margin, in: NotePage.range, step: 4)
+                        Image(systemName: "arrow.left.and.line.vertical.and.arrow.right").foregroundStyle(.secondary)
+                        Text("\(Int(margin)) pt").monospacedDigit().foregroundStyle(.secondary).frame(width: 46, alignment: .trailing)
+                    }
+                }
+                Toggle("Limit line length", isOn: $limitWidth)
+                Button("Reset to Default") { margin = NotePage.defaultMargin; limitWidth = true }
+                    .disabled(margin == NotePage.defaultMargin && limitWidth)
+            } footer: {
+                Text("The space on the left and right of a note, in Notes and Journal. Turn off “Limit line length” to let text use the full width of a wide window.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

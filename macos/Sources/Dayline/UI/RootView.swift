@@ -42,6 +42,8 @@ final class Navigator: ObservableObject {
     @Published var destination: Destination? = .today
     @Published var selectedTask: Int64?
     @Published var showInspector = false
+    /// The app's sidebar; Notes and Journal fold it away first when you collapse panes.
+    @Published var sidebar: NavigationSplitViewVisibility = .all
     @Published var search = ""
     @Published var newTaskDraft: TaskDraft?
     @Published var undo: (message: String, action: () -> Void)?
@@ -62,7 +64,7 @@ struct RootView: View {
     @EnvironmentObject var services: Services
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $nav.sidebar) {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
         } detail: {

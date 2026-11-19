@@ -5,21 +5,21 @@ import DaylineCore
 
 /// The lists of notes in the notes sidebar.
 enum NotesFilter: Hashable {
-    case all, untagged, todo, today, locked, pinned, archive, trash
+    case all, today, locked, pinned, archive, trash
     case tag(String)
 
-    static let views: [NotesFilter] = [.all, .untagged, .todo, .today, .locked, .pinned, .archive, .trash]
+    static let views: [NotesFilter] = [.all, .today, .locked, .pinned, .archive, .trash]
 
     var title: String {
         switch self {
-        case .all: "Notes"; case .untagged: "Untagged"; case .todo: "Todo"; case .today: "Today"
+        case .all: "Notes"; case .today: "Today"
         case .locked: "Locked"; case .pinned: "Pinned"; case .archive: "Archive"; case .trash: "Trash"
         case .tag(let t): "#" + t
         }
     }
     var symbol: String {
         switch self {
-        case .all: "note.text"; case .untagged: "tag.slash"; case .todo: "checklist"; case .today: "calendar"
+        case .all: "note.text"; case .today: "calendar"
         case .locked: "lock"; case .pinned: "pin"; case .archive: "archivebox"; case .trash: "trash"
         case .tag: "number"
         }
@@ -27,8 +27,8 @@ enum NotesFilter: Hashable {
     /// Menu shortcut (⌥⌘ + key).
     var key: Character {
         switch self {
-        case .all: "1"; case .untagged: "2"; case .todo: "3"; case .today: "4"; case .locked: "5"; case .pinned: "6"
-        case .archive: "9"; case .trash: "0"; case .tag: " "
+        case .all: "1"; case .today: "2"; case .locked: "3"; case .pinned: "4"
+        case .archive: "5"; case .trash: "6"; case .tag: " "
         }
     }
 }
@@ -60,17 +60,20 @@ final class NotesUI: ObservableObject {
     @Published var zoom: CGFloat = 1
     @Published var quickOpen = false
     @Published var expandedTags: Set<String> = []
-    /// 1 = editor only, 2 = notes and editor, 3 = tags, notes and editor.
-    @Published var layout: Int { didSet { UserDefaults.standard.set(layout, forKey: "notesLayout") } }
+    /// 1 = editor only, 2 = notes and editor, 3 = tags, notes and editor (Journal: 1 = entry only, 2 = timeline and entry).
+    @Published var layout: Int { didSet { UserDefaults.standard.set(layout, forKey: layoutKey) } }
+    let layoutKey: String
+    let maxLayout: Int
     @Published var sort: NoteSort { didSet { UserDefaults.standard.set(sort.rawValue, forKey: "notesSort") } }
     @Published var pinnedFirst: Bool { didSet { UserDefaults.standard.set(pinnedFirst, forKey: "notesPinnedFirst") } }
     @Published var tagSort: TagSort { didSet { UserDefaults.standard.set(tagSort.rawValue, forKey: "notesTagSort") } }
     private(set) var back: [Int64] = []
     private(set) var forward: [Int64] = []
 
-    init() {
+    init(layoutKey: String = "notesLayout", maxLayout: Int = 3) {
         let d = UserDefaults.standard
-        layout = (d.object(forKey: "notesLayout") as? Int).map { min(3, max(1, $0)) } ?? 3
+        self.layoutKey = layoutKey; self.maxLayout = maxLayout
+        layout = (d.object(forKey: layoutKey) as? Int).map { min(maxLayout, max(1, $0)) } ?? maxLayout
         sort = NoteSort(rawValue: d.string(forKey: "notesSort") ?? "") ?? .edited
         pinnedFirst = d.object(forKey: "notesPinnedFirst") as? Bool ?? true
         tagSort = TagSort(rawValue: d.string(forKey: "notesTagSort") ?? "") ?? .name
@@ -104,6 +107,28 @@ final class NotesUI: ObservableObject {
     func relock(_ id: Int64) { unlocked.remove(id) }
 
     func togglePanel(_ p: NotePanel) { panel = panel == p ? nil : p }
+
+    // MARK: Collapsing panes (swipe right to left, or the ‹‹ button), step by step:
+    // the app's sidebar, then the tags column, then the list, until only the editor is left.
+    // Swiping left to right (or ››) brings them back in the opposite order.
+
+    /// `shown`: how many columns fit right now (a narrow window may already hide some).
+    func canCollapse(_ nav: Navigator, shown: Int? = nil) -> Bool { nav.sidebar != .detailOnly || min(layout, shown ?? layout) > 1 }
+    func canExpand(_ nav: Navigator) -> Bool { layout < maxLayout || nav.sidebar == .detailOnly }
+
+    func collapse(_ nav: Navigator, shown: Int? = nil) {
+        withAnimation(.snappy(duration: 0.25)) {
+            if nav.sidebar != .detailOnly { nav.sidebar = .detailOnly; return }
+            let current = min(layout, shown ?? layout)
+            if current > 1 { layout = current - 1 }
+        }
+    }
+
+    func expand(_ nav: Navigator) {
+        withAnimation(.snappy(duration: 0.25)) {
+            if layout < maxLayout { layout += 1 } else if nav.sidebar == .detailOnly { nav.sidebar = .all }
+        }
+    }
 }
 
 /// Touch ID or the Mac's password, for locked notes. Locking hides a note's text in Dayline; it isn't encryption.
@@ -137,8 +162,6 @@ extension Store {
             let live = n.archivedAt == nil && n.trashedAt == nil
             switch filter {
             case .all: return live
-            case .untagged: return live && labels(of: n).isEmpty
-            case .todo: return live && NoteFormat.hasOpenTodo(n.body)
             case .today: return live && (Day(n.updatedAt) == today || Day(n.createdAt) == today)
             case .locked: return live && n.locked
             case .pinned: return live && n.isPinned

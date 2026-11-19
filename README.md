@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Download for Android" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white"></a>
-  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.2"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
+  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.3"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
   <img alt="Offline first" src="https://img.shields.io/badge/offline-first-1757D0">
   <img alt="No ads, no tracking" src="https://img.shields.io/badge/ads%20%26%20tracking-none-555">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/f7b61f04-65f1-4bd7-b25c-8e7d26689c76
 | | Get it | Needs |
 |---|---|---|
 | **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
-| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.2): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
+| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.3): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
 
 Both apps update themselves after you install them.
 
@@ -82,7 +82,7 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer, a notes ap
 - Rich text: bold, italic, underline, strikethrough, headings 1–6, text colours, highlighter, inline code, links and lists.
 - Blocks: quotes, callouts (note, tip, important, warning, caution), code blocks, tables and line separators.
 - Checklists, nested `#tags` (`#work/meetings`) with their own icons, colour-coded notes, pinning and search.
-- Organise like Bear: Todo, Today, Pinned, Untagged, Locked, Archive and Trash (restore anything until you empty it).
+- Organise like Bear: Today, Pinned, Locked, Archive and Trash (restore anything until you empty it).
 - `[[Wiki links]]` between notes with backlinks, a table of contents, word count and reading time, find and replace, and spell check.
 - Lock a note behind your fingerprint, face, Touch ID or password.
 - Export as Markdown, HTML, PDF or text, import Markdown and text files, and print.
@@ -113,7 +113,7 @@ Most people juggle a to-do app, a calendar, a habit tracker, a timer, a notes ap
 - **Widgets:** Today's tasks, Habits, Daily progress, Next up, Focus timer and Quick add for your desktop and Notification Centre. Tick tasks and habits or start the timer right from the widget, and pick each widget's background art in **Settings → Widgets**, just like on the phone.
 - **Every phone theme:** the same accent colours, monochrome, gradient and dynamic themes as on Android.
 - **Menu bar:** today's tasks and habits, quick add and the focus timer, without opening the app.
-- **Notes like Bear:** tags, notes and editor in three panes (⌃1–⌃3), ⌥⌘1–⌥⌘0 for Notes, Todo, Today, Locked, Pinned, Archive and Trash, ⌘O Quick Open, a Format menu with shortcuts for every style, and statistics, contents and backlinks beside the note.
+- **Notes like Bear:** tags, notes and editor in three panes (⌃1–⌃3); swipe left with two fingers (or ‹‹, ⌃⌘←) to fold away the sidebar, then the tags, then the list, and swipe right (››, ⌃⌘→) to bring them back, in Journal too. ⌥⌘1–⌥⌘6 for Notes, Today, Locked, Pinned, Archive and Trash, adjustable page margins in Settings → Notes, ⌘O Quick Open, a Format menu with shortcuts for every style, and statistics, contents and backlinks beside the note.
 - **Keyboard first:** ⌘N new task, ⌥⌘N new note, ⇧⌘J new journal entry, ⇧⌘H new habit, ⌘R refresh, ⌘1–⌘9 to jump between sections, ⇧⌘F to start or pause the focus timer.
 
 <p align="center"><img src="docs/gallery-mac.png" alt="Dayline for Mac: calendar, habits, notes and statistics" width="100%"></p>

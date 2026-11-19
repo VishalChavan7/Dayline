@@ -188,7 +188,6 @@ class NoteFeaturesFlowTest {
         env.notes.archive(c)
         fun shown() = lists.state.value.notes.map { it.id }.toSet()
         until { shown() == setOf(a, b) }
-        lists.setView("todo"); until { shown() == setOf(b) }
         lists.setView("archive"); until { shown() == setOf(c) }
         lists.setView("tag:work"); until { shown() == setOf(a) }
         assertTrue(lists.state.value.categories.containsAll(listOf("work", "work/meetings")))

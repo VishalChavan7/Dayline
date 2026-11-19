@@ -9,6 +9,10 @@ struct NotesCommands: Commands {
 
     var ui: NotesUI { services.notesUI }
     var hub: EditorHub { EditorHub.shared }
+    /// Notes or Journal, whichever is on screen.
+    var paneUI: NotesUI? {
+        switch services.nav.destination { case .notes: ui; case .journal: services.journalUI; default: nil }
+    }
 
     var body: some Commands {
         CommandGroup(replacing: .importExport) {
@@ -50,6 +54,10 @@ struct NotesCommands: Commands {
             Button("Show Editor Only") { services.nav.go(.notes); ui.layout = 1 }.keyboardShortcut("1", modifiers: .control)
             Button("Show Notes and Editor") { services.nav.go(.notes); ui.layout = 2 }.keyboardShortcut("2", modifiers: .control)
             Button("Show Tags, Notes and Editor") { services.nav.go(.notes); ui.layout = 3 }.keyboardShortcut("3", modifiers: .control)
+            Button("Hide a Pane") { if let p = paneUI { p.collapse(services.nav) } else { NSSound.beep() } }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .control])
+            Button("Show a Pane") { if let p = paneUI { p.expand(services.nav) } else { NSSound.beep() } }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
             Divider()
             Button("Statistics") { ui.togglePanel(.info) }.keyboardShortcut("i", modifiers: [.command, .shift])
             Button("Table of Contents") { ui.togglePanel(.contents) }.keyboardShortcut("a", modifiers: [.command, .shift])

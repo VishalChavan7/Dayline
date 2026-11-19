@@ -180,7 +180,7 @@ class PhoneSizeScreenshotTest(private val device: Device) {
     }
     @Test fun notesTrash() = render("17b_notes_trash") {
         val trashed = SampleData.notesState().notes.take(2).map { it.copy(trashedAt = java.time.Instant.EPOCH) }
-        com.dayline.app.ui.notes.NotesContent(SampleData.notesState().copy(notes = trashed, view = "trash", counts = mapOf("trash" to 2, "todo" to 1, "pinned" to 1)), com.dayline.app.ui.notes.NotesActions())
+        com.dayline.app.ui.notes.NotesContent(SampleData.notesState().copy(notes = trashed, view = "trash", counts = mapOf("trash" to 2, "pinned" to 1)), com.dayline.app.ui.notes.NotesActions())
     }
 
     @Test fun navBar() = render("16_nav_bar") {

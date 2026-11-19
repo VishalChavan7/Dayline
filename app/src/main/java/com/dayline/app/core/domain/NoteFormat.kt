@@ -162,13 +162,6 @@ object NoteFormat {
     /** Whether [text] links to a note called [title]. */
     fun linksTo(text: String, title: String): Boolean = title.isNotBlank() && wikiLinks(text).any { it.equals(title.trim(), ignoreCase = true) }
 
-    /** Whether a note has a checklist line that isn't ticked yet. */
-    fun hasOpenTodo(body: String): Boolean {
-        val d = NoteCodec.decode(body)
-        if (d.checklist.any { !it.done && it.text.isNotBlank() }) return true
-        return NoteCodec.plainText(d.html).lines().any { it.trimStart().startsWith("\u2610") }
-    }
-
     data class Stats(val words: Int, val characters: Int, val charactersNoSpaces: Int, val paragraphs: Int, val readMinutes: Int)
 
     fun stats(title: String, body: String): Stats {

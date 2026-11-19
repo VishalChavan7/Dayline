@@ -120,8 +120,6 @@ class NoteBlocksModelTest {
         )
         fun ids(view: String, q: String = "") = filterNotes(notes, view, q, "edited", true, today, zone).map { it.id }
         assertEquals(listOf(5L, 1L, 2L), ids("all"))
-        assertEquals(listOf(5L, 2L), ids("untagged"))
-        assertEquals(listOf(2L), ids("todo"))
         assertEquals(listOf(1L), ids("today"))
         assertEquals(listOf(5L), ids("locked"))
         assertEquals(listOf(5L), ids("pinned"))

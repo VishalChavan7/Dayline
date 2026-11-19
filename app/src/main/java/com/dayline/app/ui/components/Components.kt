@@ -342,16 +342,8 @@ fun EmptyState(
                 Modifier.padding(horizontal = Dimens.xxxl),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(
-                    Modifier
-                        .size(96.dp)
-                        .clip(RoundedCornerShape(36.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(44.dp))
-                }
-                Spacer(Modifier.height(Dimens.xl))
+                EmptyArt(EmptyArtKind.forIcon(icon), width = ART_WIDTH)
+                Spacer(Modifier.height(Dimens.md))
                 Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(Dimens.sm))
                 Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
@@ -367,9 +359,9 @@ fun EmptyState(
         layout(w, h) {
             val imeBottom = ime.getBottom(density)
             val top = coordinates?.positionInWindow()?.y ?: 0f
-            // The icon's centre sits at the same height on every page (text flows below it), at the
-            // spot where a typical icon + title + two-line message is centred on screen.
-            var target = if (windowHeight > 0) windowHeight * centerAt - 70.dp.toPx() - top - 48.dp.toPx() else (h - main.height) / 2f
+            // The picture's centre sits at the same height on every page (text flows below it), at the
+            // spot where a typical picture + title + two-line message is centred on screen.
+            var target = if (windowHeight > 0) windowHeight * centerAt - 70.dp.toPx() - top - (ART_WIDTH * (EmptyArtData.HEIGHT / EmptyArtData.WIDTH) / 2).toPx() else (h - main.height) / 2f
             // The keyboard: only if it would cover the text, ride up with it. This runs in the
             // placement step and follows the keyboard's own animation frame by frame (no jank).
             if (windowHeight > 0 && imeBottom > 0) {
@@ -383,6 +375,9 @@ fun EmptyState(
         }
     }
 }
+
+/** Width of the picture on empty pages (it fits a 320 dp wide phone with the page's margins). */
+private val ART_WIDTH = 256.dp
 
 /** Compact inline empty message inside cards. */
 @Composable

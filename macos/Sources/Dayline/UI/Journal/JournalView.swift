@@ -40,15 +40,26 @@ struct JournalView: View {
     @State private var bookmarkedOnly = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            timeline(ui)
-                .frame(width: 380)
-            Divider()
-            JournalEditorHost(ui: ui)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { geo in
+            let columns = shown(width: geo.size.width)
+            HStack(spacing: 0) {
+                if columns >= 2 {
+                    timeline(ui)
+                        .frame(width: 380)
+                    Divider()
+                }
+                JournalEditorHost(ui: ui, shownColumns: columns)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .background(SwipeCatcher { leftward in
+                if leftward { ui.collapse(services.nav, shown: columns) } else { ui.expand(services.nav) }
+            })
         }
         .navigationTitle("Journal")
     }
+
+    /// 2 = timeline and entry, 1 = the entry alone (chosen, or when the window is too narrow for both).
+    func shown(width: CGFloat) -> Int { ui.layout >= 2 && width - 380 >= 400 ? 2 : 1 }
 
     func newEntry(_ ui: NotesUI, prompt: String? = nil) {
         services.journal.prompt = prompt
@@ -137,11 +148,12 @@ struct JournalView: View {
 /// The open entry (or a friendly empty page), with its own selection so Notes isn't disturbed.
 private struct JournalEditorHost: View {
     @ObservedObject var ui: NotesUI
+    var shownColumns: Int
     @EnvironmentObject var services: Services
     @EnvironmentObject var store: Store
     var body: some View {
         if let id = ui.selected {
-            NotePane(noteId: id, presetLabel: Store.journalLabel, journal: true, promptTitle: services.journal.prompt)
+            NotePane(noteId: id, presetLabel: Store.journalLabel, shownColumns: shownColumns, journal: true, promptTitle: services.journal.prompt)
                 .id(ui.token)
                 .environmentObject(ui)
         } else {

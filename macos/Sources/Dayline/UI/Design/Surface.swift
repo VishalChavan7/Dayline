@@ -94,6 +94,20 @@ struct IconButton: View {
     }
 }
 
+/// The label of a menu that sits beside IconButtons: same size, symbol weight and hover.
+struct IconMenuLabel: View {
+    let symbol: String
+    var size: CGFloat = 28
+    @State private var hover = false
+    var body: some View {
+        Image(systemName: symbol).font(.system(size: size * 0.45, weight: .semibold))
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(Color.primary.opacity(hover ? 0.08 : 0)))
+            .contentShape(Rectangle())
+            .onHover { hover = $0 }
+    }
+}
+
 /// Big title and subtitle at the top of a screen, like the phone's top bar.
 struct ScreenTitle: View {
     let title: String

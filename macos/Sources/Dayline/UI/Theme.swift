@@ -376,7 +376,7 @@ struct EmptyState: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            EmptyArt(kind: art, size: 170)
+            EmptyArt(kind: art, size: 320)
             Text(title).font(.system(size: 18, weight: .semibold))
             if !message.isEmpty {
                 Text(message).font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 340)

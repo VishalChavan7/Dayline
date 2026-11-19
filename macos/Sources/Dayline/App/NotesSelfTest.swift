@@ -31,7 +31,6 @@ enum NotesSelfTest {
         func ids(_ f: NotesFilter, _ q: String = "") -> Set<Int64> { Set(store.notes(in: f, query: q).map(\.id)).intersection([a, b, c, d]) }
         expect(ids(.all) == [a, b, c], "Notes list leaves out archived notes")
         expect(ids(.archive) == [d], "Archive list")
-        expect(ids(.todo) == [b], "Todo list")
         expect(ids(.locked) == [c], "Locked list")
         expect(ids(.tag("st")) == [a, b], "#st includes #st/one")
         expect(ids(.tag("st/one")) == [a], "#st/one")
@@ -114,8 +113,57 @@ enum NotesSelfTest {
             expect(body.contains("<span style=\"font-size: 21.0px;\"><b>make me a heading</b></span>"), "heading saved")
             expect(body.contains("<div class=\"callout\" data-kind=\"tip\"><p>quote me</p></div>"), "callout saved")
             expect(body.contains("<table><tr><th>cell</th><th></th></tr><tr><td></td><td></td></tr></table>"), "table saved (\(body))")
+
+            // The phone edits the open note (a sync): the editor shows it, and leaving doesn't save the old text back.
+            if var m = store.note(e) {
+                m.body = "<p>written on the phone</p>"
+                store.save(m)
+                try? await Task.sleep(for: .seconds(0.6))
+                expect(EditorHub.shared.current?.string.contains("written on the phone") == true, "an open note shows the phone's edit")
+                ui.open(b)
+                try? await Task.sleep(for: .seconds(0.6))
+                expect(store.note(e)?.body == "<p>written on the phone</p>", "leaving the note keeps the phone's edit (\(store.note(e)?.body ?? "nil"))")
+            }
         } else { expect(false, "editor opened") }
+        // Opening a note and leaving it without typing changes nothing (so it can't overwrite a newer copy).
+        let viewed = store.note(a)
+        ui.open(a)
+        try? await Task.sleep(for: .seconds(0.8))
+        ui.open(b)
+        try? await Task.sleep(for: .seconds(0.4))
+        expect(store.note(a) == viewed, "viewing a note doesn't save it")
         ui.close()
+
+        // Collapsing panes: the app's sidebar, then tags, then the list; expanding brings them back in reverse.
+        let panes = NotesUI(layoutKey: "selftest.notesLayout", maxLayout: 3), nav = Navigator()
+        panes.layout = 3; nav.sidebar = .all
+        var steps: [String] = []
+        func state() -> String { "\(nav.sidebar == .detailOnly ? "-" : "S")\(panes.layout)" }
+        for _ in 0..<4 { panes.collapse(nav); steps.append(state()) }
+        expect(!panes.canCollapse(nav), "nothing left to hide")
+        for _ in 0..<4 { panes.expand(nav); steps.append(state()) }
+        expect(!panes.canExpand(nav), "everything shown again")
+        expect(steps == ["-3", "-2", "-1", "-1", "-2", "-3", "S3", "S3"], "collapse and expand order (\(steps))")
+        panes.layout = 3; nav.sidebar = .detailOnly; panes.collapse(nav, shown: 2)
+        expect(panes.layout == 1, "a narrow window that already hides the tags hides the list next")
+        UserDefaults.standard.removeObject(forKey: "selftest.notesLayout")
+        let journalPanes = NotesUI(layoutKey: "selftest.journalLayout", maxLayout: 2)
+        nav.sidebar = .detailOnly; journalPanes.layout = 2
+        journalPanes.collapse(nav)
+        expect(journalPanes.layout == 1 && !journalPanes.canCollapse(nav), "Journal: entry alone")
+        journalPanes.expand(nav); journalPanes.expand(nav)
+        expect(journalPanes.layout == 2 && nav.sidebar == .all, "Journal: timeline, then the sidebar")
+        UserDefaults.standard.removeObject(forKey: "selftest.journalLayout")
+
+        // Lists: Todo and Untagged are gone from Notes
+        expect(NotesFilter.views.map(\.title) == ["Notes", "Today", "Locked", "Pinned", "Archive", "Trash"], "note lists")
+
+        // Empty-page pictures
+        for k in [ArtKind.inbox, .calendar, .checklist, .search, .sprout, .notebook, .journal, .chart, .hello] {
+            let els = ArtShapes.scene(k)
+            expect(els.count >= 5 && els.allSatisfy { !$0.path.isEmpty } && els.contains { $0.stroke == "i" && $0.path.boundingRect.width > 30 },
+                   "picture \(k.rawValue) (\(els.count) parts)")
+        }
 
         for id in [a, b, c, e] { store.deleteNote(id) }
         lines.insert(failed == 0 ? "All \(lines.count) notes self-tests passed." : "\(failed) of \(lines.count) notes self-tests FAILED.", at: 0)

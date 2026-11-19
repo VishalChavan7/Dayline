@@ -251,7 +251,7 @@ data class NotesUiState(
     val total: Int = 0,
     /** Every #tag in use, parents included (#work before #work/meetings). */
     val categories: List<String> = emptyList(),
-    /** "all", "untagged", "todo", "today", "locked", "pinned", "archive", "trash" or "tag:<path>". */
+    /** "all", "today", "locked", "pinned", "archive", "trash" or "tag:<path>". */
     val view: String = "all",
     val query: String = "",
     val grid: Boolean = true,
@@ -269,8 +269,8 @@ data class NotesUiState(
 
 /** The lists of notes (like Bear's sidebar): key and name. */
 val NOTE_VIEWS = listOf(
-    "all" to "Notes", "todo" to "Todo", "today" to "Today", "pinned" to "Pinned",
-    "locked" to "Locked", "untagged" to "Untagged", "archive" to "Archive", "trash" to "Trash",
+    "all" to "Notes", "today" to "Today", "pinned" to "Pinned",
+    "locked" to "Locked", "archive" to "Archive", "trash" to "Trash",
 )
 
 /** Notes (not journal entries) in a list, searched and sorted. Same rules as the Mac. */
@@ -281,8 +281,6 @@ fun filterNotes(all: List<Note>, view: String, query: String, sort: String, pinn
         val live = n.archivedAt == null && n.trashedAt == null
         when {
             view == "all" -> live
-            view == "untagged" -> live && n.labels().isEmpty()
-            view == "todo" -> live && com.dayline.app.core.domain.NoteFormat.hasOpenTodo(n.body)
             view == "today" -> live && (day(n.updatedAt) == today || day(n.createdAt) == today)
             view == "locked" -> live && n.locked
             view == "pinned" -> live && n.isPinned
@@ -502,7 +500,6 @@ fun NotesContent(state: NotesUiState, actions: NotesActions) {
                                 state.view == "trash" -> "Trash is empty"
                                 state.view == "archive" -> "Nothing archived"
                                 state.view == "locked" -> "No locked notes"
-                                state.view == "todo" -> "No open checklist items"
                                 state.view == "today" -> "Nothing written today"
                                 state.view != "all" -> "No notes here"
                                 else -> "Notes you add appear here"

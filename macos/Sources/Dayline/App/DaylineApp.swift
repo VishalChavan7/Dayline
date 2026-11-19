@@ -8,7 +8,7 @@ final class Services: ObservableObject {
     let store: Store
     let nav = Navigator()
     let notesUI = NotesUI()
-    let journalUI = NotesUI()
+    let journalUI = NotesUI(layoutKey: "journalLayout", maxLayout: 2)
     let journal = JournalUI()
     let timer: FocusTimer
     let notifier: Notifier

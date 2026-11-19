@@ -100,13 +100,6 @@ class NoteFormatTest {
         assertFalse(NoteFormat.linksTo("see [[My Note]]", ""))
     }
 
-    @Test fun openTodos() {
-        assertTrue(NoteFormat.hasOpenTodo("<p>☐ buy milk</p>"))
-        assertFalse(NoteFormat.hasOpenTodo("<p>☑︎ bought</p>"))
-        assertTrue(NoteFormat.hasOpenTodo(NoteCodec.encode("<p>x</p>", listOf(CheckItem("y")))))
-        assertFalse(NoteFormat.hasOpenTodo(NoteCodec.encode("<p>x</p>", listOf(CheckItem("y", true)))))
-    }
-
     @Test fun stats() {
         val s = NoteFormat.stats("T", "<p>Hello world, it's me.</p><p>Second line</p>")
         assertEquals(6, s.words)
