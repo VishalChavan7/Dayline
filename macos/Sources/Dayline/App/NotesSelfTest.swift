@@ -125,6 +125,45 @@ enum NotesSelfTest {
                 expect(store.note(e)?.body == "<p>written on the phone</p>", "leaving the note keeps the phone's edit (\(store.note(e)?.body ?? "nil"))")
             }
         } else { expect(false, "editor opened") }
+        // A sync gives the open note a new id because the phone made a different note with the same id.
+        let mine = make("ST Mine", "<p>mine</p>")
+        ui.open(mine)
+        try? await Task.sleep(for: .seconds(0.8))
+        var synced = store.data
+        if let i = synced.notes.firstIndex(where: { $0.id == mine }) {
+            var moved = synced.notes[i]; let newId = synced.nextId(synced.notes, \Note.id); moved.id = newId
+            var phone = Note(id: mine, title: "ST Phone"); phone.body = "<p>phone</p>"
+            phone.createdAt = Date(timeIntervalSinceNow: -60); phone.updatedAt = Date()
+            synced.notes[i] = phone; synced.notes.append(moved)
+            store.replaceAll(with: synced, keepSafetyCopy: false)
+            try? await Task.sleep(for: .seconds(0.6))
+            expect(ui.selected == newId, "the open note follows its new id after a sync")
+            if let tv = EditorHub.shared.current {
+                window.makeFirstResponder(tv)
+                tv.setSelectedRange(NSRange(location: 0, length: 0))
+                tv.insertText("more ", replacementRange: tv.selectedRange())
+            }
+            try? await Task.sleep(for: .seconds(1.5))
+            expect(store.note(mine)?.title == "ST Phone" && store.note(mine)?.body == "<p>phone</p>", "the phone's note with the old id is left alone")
+            expect(store.note(newId)?.body.contains("more") == true, "typing goes to the moved note (\(store.note(newId)?.body ?? "nil"))")
+            expect(store.data.notes.filter { $0.title == "ST Mine" }.count == 1, "no copy is made")
+            ui.close()
+            for id in [mine, newId] { store.deleteNote(id) }
+        } else { expect(false, "note for the renumber test") }
+
+        // Copies left by older versions: same creation time; the newest edit stays, the rest go to Trash.
+        var c1 = Note(id: 0, title: "ST Copy"); c1.body = "<p>v1</p>"
+        let c1Id = store.save(c1)
+        if var older = store.note(c1Id) {
+            older.id = store.data.nextId(store.data.notes, \Note.id); older.body = "<p>v0</p>"; older.updatedAt = Date(timeIntervalSinceNow: -30)
+            var dd = store.data; dd.notes.append(older); store.replaceAll(with: dd, keepSafetyCopy: false)
+            let found = Set(store.duplicateNotes.map(\.id)).intersection([c1Id, older.id])
+            expect(found == [older.id], "duplicate copies are found")
+            store.trashDuplicateNotes()
+            expect(store.note(older.id)?.trashedAt != nil && store.note(c1Id)?.trashedAt == nil, "older copy goes to Trash, newest stays")
+            for id in [c1Id, older.id] { store.deleteNote(id) }
+        }
+
         // Opening a note and leaving it without typing changes nothing (so it can't overwrite a newer copy).
         let viewed = store.note(a)
         ui.open(a)

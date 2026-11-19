@@ -147,6 +147,7 @@ fun HabitsContent(state: HabitsUiState, actions0: HabitsActions) {
                 state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingIndicator() }
                 state.active.isEmpty() && state.archived.isEmpty() -> EmptyState(
                     Icons.Rounded.SelfImprovement, "Build a habit", "Small daily actions add up. Create a habit and check in each day to grow your streak.",
+                    lift = com.dayline.app.ui.components.EMPTY_PAGE_LIFT,
                 ) { TextButton(onClick = actions.onNew) { Text("Create your first habit") } }
                 else -> LazyColumn(
                     contentPadding = PaddingValues(start = Dimens.lg, end = Dimens.lg, bottom = 120.dp),

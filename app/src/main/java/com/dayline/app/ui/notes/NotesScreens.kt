@@ -176,6 +176,7 @@ import com.dayline.app.core.model.TaskItem
 import com.dayline.app.ui.components.ConfirmDialog
 import com.dayline.app.ui.components.DaylineTopBar
 import com.dayline.app.ui.components.EmptyState
+import com.dayline.app.ui.components.EMPTY_PAGE_LIFT
 import com.dayline.app.ui.components.LabeledIconButton
 import com.dayline.app.ui.components.ResponsiveBox
 import com.dayline.app.ui.components.rememberBarScroll
@@ -511,6 +512,7 @@ fun NotesContent(state: NotesUiState, actions: NotesActions) {
                                 else -> "Tap New Note to write. Format text, add tables and checklists, and type #label (or #work/meetings) to organise."
                             },
                             modifier = Modifier.weight(1f),
+                            lift = EMPTY_PAGE_LIFT,
                         )
                     }
                     return@CompositionLocalProvider
@@ -1006,19 +1008,32 @@ class NoteEditorViewModel @Inject constructor(
         val encoded = NoteCodec.encode(html, checklist, s.media)
         // Labels are tags kept beside the note (typed as #word, then lifted out of the text).
         val category = s.note.category
-        var id = s.note.id
+        // Deleted elsewhere while open (on the Mac, or by sync): don't bring it back.
+        var id = currentId(s.note) ?: run { _state.update { it.copy(closed = true) }; return@launch }
         when {
-            empty && s.note.id != 0L -> { repo.delete(s.note.id); id = 0L }
+            empty && id != 0L -> { repo.delete(id); id = 0L }
             empty -> Unit
-            s.dirty || htmlChanged || category != s.note.category -> id = repo.save(s.note.copy(body = encoded, category = category))
+            s.dirty || htmlChanged || category != s.note.category -> id = repo.save(s.note.copy(id = id, body = encoded, category = category))
         }
         if (id != 0L) after?.invoke(id)
         _state.update { it.copy(closed = true) }
     }
 
+    /**
+     * Where [n] lives now: 0 for a note not saved yet, null once it's gone. A sync gives a note made
+     * here a new id when the Mac made a different note with the same id at the same time; the note is
+     * followed by its creation time, so saving never writes over the Mac's note (leaving two copies).
+     */
+    private suspend fun currentId(n: Note): Long? {
+        if (n.id == 0L) return 0L
+        val made = n.createdAt.toEpochMilli()
+        if (repo.get(n.id)?.createdAt?.toEpochMilli() == made) return n.id
+        return repo.allNotes.first().firstOrNull { it.createdAt.toEpochMilli() == made }?.id
+    }
+
     /** Moves the note to Trash (Restore brings it back). */
     fun delete() = viewModelScope.launch {
-        if (noteId != 0L) repo.trash(noteId)
+        currentId(_state.value.note)?.takeIf { it != 0L }?.let { repo.trash(it) }
         _state.update { it.copy(closed = true) }
     }
 

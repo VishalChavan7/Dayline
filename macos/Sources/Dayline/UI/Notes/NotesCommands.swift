@@ -17,6 +17,7 @@ struct NotesCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .importExport) {
             Button("Import Notes…") { importNotes() }
+            Button("Remove Duplicate Notes…") { removeDuplicates() }
             Menu("Export Note") {
                 ForEach(NoteExport.Format.allCases) { f in
                     Button(f.title + "…") { withNote { NoteExport.export($0, as: f, store: services.store) } }
@@ -135,6 +136,22 @@ struct NotesCommands: Commands {
         guard let id = notesUI.selected, id != 0, let n = services.store.note(id) else { NSSound.beep(); return }
         if !unlocked || !n.locked || notesUI.unlocked.contains(id) { f(n); return }
         Task { @MainActor in if await NoteLock.authenticate("export a locked note") { notesUI.unlocked.insert(id); f(n) } }
+    }
+
+    /// Finds copies a sync left behind and offers to move them to Trash.
+    func removeDuplicates() {
+        let n = services.store.duplicateNotes.count
+        let a = NSAlert()
+        if n == 0 {
+            a.messageText = "No duplicate notes"
+            a.informativeText = "None of your notes has a copy."
+            a.runModal(); return
+        }
+        a.messageText = "Move \(n) duplicate note\(n == 1 ? "" : "s") to Trash?"
+        a.informativeText = "These are older copies of notes you have, left behind by a sync. The newest copy of each note stays. You can restore anything from Trash."
+        a.addButton(withTitle: "Move to Trash"); a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        services.store.trashDuplicateNotes()
     }
 
     func importNotes() {

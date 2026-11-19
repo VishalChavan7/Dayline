@@ -162,7 +162,7 @@ fun TaskListContent(state: TaskListUiState, actions: TaskListActions) {
                     }
                     if (mode == TaskListMode.ALL) {
                         IconButton(onClick = { showFilters = true }) {
-                            BadgedBox(badge = { if (state.filter.activeCount > 0) Badge { Text("${state.filter.activeCount}") } }) {
+                            BadgedBox(badge = { if (state.filter.activeCount(mode) > 0) Badge { Text("${state.filter.activeCount(mode)}") } }) {
                                 Icon(Icons.Rounded.FilterList, contentDescription = "Filters")
                             }
                         }
@@ -270,7 +270,7 @@ private fun ActiveFiltersRow(state: TaskListUiState, actions: TaskListActions) {
 
 @Composable
 private fun EmptyForMode(state: TaskListUiState, actions: TaskListActions) {
-    val filtered = state.filter.activeCount > 0 || state.filter.query.isNotBlank()
+    val filtered = state.filter.activeCount(state.mode) > 0 || state.filter.query.isNotBlank()
     when {
         filtered -> EmptyState(Icons.Rounded.FilterList, "No matching tasks", "Try different filters or search words.") {
             TextButton(onClick = actions.onClearFilters) { Text("Clear filters") }

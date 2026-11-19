@@ -153,6 +153,23 @@ struct TagNode: Identifiable, Hashable {
 }
 
 extension Store {
+    /// Copies left behind when a sync gave a note a new id while it was open (fixed in 1.3.5): notes with
+    /// the same title made at the same millisecond. The most recently edited one of each stays; these are the rest.
+    var duplicateNotes: [Note] {
+        let live = data.notes.filter { $0.trashedAt == nil && $0.createdAt.epochMillis > 0 }
+        let groups = Dictionary(grouping: live) { "\($0.createdAt.epochMillis)|\($0.title.trimmingCharacters(in: .whitespaces).lowercased())" }
+        return groups.values.filter { $0.count > 1 }.flatMap { $0.sorted { $0.updatedAt > $1.updatedAt }.dropFirst() }
+    }
+
+    /// Moves those copies to Trash, where they can still be restored. Returns how many.
+    @discardableResult func trashDuplicateNotes() -> Int {
+        let copies = duplicateNotes
+        for n in copies { trashNote(n.id) }
+        return copies.count
+    }
+}
+
+extension Store {
     /// Notes (not journal entries) in a sidebar list, searched and sorted.
     func notes(in filter: NotesFilter, query: String = "", sort: NoteSort = .edited, pinnedFirst: Bool = true) -> [Note] {
         let q = query.trimmingCharacters(in: .whitespaces)

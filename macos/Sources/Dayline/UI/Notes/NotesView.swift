@@ -425,9 +425,10 @@ struct NotePane: View {
         .background((journal ? nil : NoteColors.color(note.color)?.opacity(0.35)) ?? scheme.card)
         .onAppear(perform: load)
         .onDisappear { save() }
-        .onChange(of: store.note(note.id == 0 ? noteId : note.id)) { _, n in
+        .onChange(of: store.note(note.id == 0 ? noteId : note.id)) { _, _ in
             // Pinned, locked, archived or restored from elsewhere (the list, a menu, sync).
-            guard let n, n.id == note.id, n.id != 0 else { return }
+            guard note.id != 0, let id = currentId(), let n = store.note(id) else { return }
+            if id != note.id { note.id = id; if ui.selected == noteId { ui.selected = id } }
             if snapshot() == baseline && (n.title != note.title || n.body != note.body || n.category != note.category) {
                 reload(from: n)   // edited on the phone (or elsewhere) while open here
                 return
@@ -621,6 +622,17 @@ struct NotePane: View {
         fill(from: n)
     }
 
+    /// Where this note lives in the store now: 0 for a note not saved yet, nil once it's gone.
+    /// A sync gives a note made here a new id when the phone made a different note with the same id
+    /// at the same time. The note is followed by its creation time, so the editor never saves over
+    /// the phone's note (which would leave two copies of this one).
+    func currentId() -> Int64? {
+        guard note.id != 0 else { return 0 }
+        let made = note.createdAt.epochMillis
+        if let n = store.note(note.id), n.createdAt.epochMillis == made { return note.id }
+        return store.data.notes.first { $0.createdAt.epochMillis == made }?.id
+    }
+
     /// What the editor holds, in the store's format.
     func snapshot(title: String? = nil) -> Snapshot {
         let body = NoteCodec.encode(html, checklist: checklist, media: media)
@@ -648,7 +660,8 @@ struct NotePane: View {
         let snap = snapshot()
         if note.id != 0 && snap == baseline { return }
         // Deleted (here, from the list, or by sync) while open: don't bring it back.
-        if note.id != 0 && store.note(note.id) == nil { return }
+        guard let liveId = currentId() else { return }
+        if liveId != note.id { note.id = liveId; if ui.selected == noteId { ui.selected = liveId } }
         var n = note
         if let current = store.note(note.id) {
             // State changed elsewhere (pinned from the list, archived, locked) wins over this copy.

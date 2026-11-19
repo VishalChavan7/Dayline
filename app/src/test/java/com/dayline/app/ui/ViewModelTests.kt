@@ -39,6 +39,14 @@ class ViewModelTests {
             completedAt = if (done) today.atTime(9, 0).toInstant(ZoneOffset.UTC) else null))
 
     @Test
+    fun completedPageDoesNotCountItselfAsAFilter() {
+        val completed = TaskFilter(status = StatusFilter.COMPLETED)
+        assertEquals(0, completed.activeCount(TaskListMode.COMPLETED))
+        assertEquals(1, completed.activeCount(TaskListMode.ALL))
+        assertEquals(1, completed.copy(priorities = setOf(Priority.HIGH)).activeCount(TaskListMode.COMPLETED))
+    }
+
+    @Test
     fun todayStateSplitsOverdueTodayAndDeadlines() {
         val items = listOf(
             item(1, "late", today.minusDays(2)),

@@ -328,6 +328,8 @@ fun EmptyState(
     modifier: Modifier = Modifier,
     /** Where the icon + text are centred, as a fraction of the window height. */
     centerAt: Float = 0.6f,
+    /** Moves this page's picture and text up from the shared spot. */
+    lift: Dp = 0.dp,
     action: (@Composable () -> Unit)? = null,
 ) {
     // Every empty state sits at the same spot on screen: its icon + text are centred on the
@@ -361,7 +363,7 @@ fun EmptyState(
             val top = coordinates?.positionInWindow()?.y ?: 0f
             // The picture's centre sits at the same height on every page (text flows below it), at the
             // spot where a typical picture + title + two-line message is centred on screen.
-            var target = if (windowHeight > 0) windowHeight * centerAt - 70.dp.toPx() - top - (ART_WIDTH * (EmptyArtData.HEIGHT / EmptyArtData.WIDTH) / 2).toPx() else (h - main.height) / 2f
+            var target = if (windowHeight > 0) windowHeight * centerAt - 70.dp.toPx() - top - (ART_WIDTH * (EmptyArtData.HEIGHT / EmptyArtData.WIDTH) / 2).toPx() - lift.toPx() else (h - main.height) / 2f
             // The keyboard: only if it would cover the text, ride up with it. This runs in the
             // placement step and follows the keyboard's own animation frame by frame (no jank).
             if (windowHeight > 0 && imeBottom > 0) {
@@ -375,6 +377,9 @@ fun EmptyState(
         }
     }
 }
+
+/** How far Notes and Habits raise their empty page: their longer messages and buttons sit lower otherwise. */
+val EMPTY_PAGE_LIFT = 40.dp
 
 /** Width of the picture on empty pages. */
 private val ART_WIDTH = 224.dp

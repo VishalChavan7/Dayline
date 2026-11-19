@@ -52,6 +52,10 @@ data class TaskFilter(
     val activeCount: Int
         get() = listOf(status != StatusFilter.OPEN, priorities.isNotEmpty(), date != DateFilter.ANY, projectId != null, category != null, tagIds.isNotEmpty())
             .count { it }
+
+    /** Filters the user chose on this page: Completed always shows completed tasks, so that isn't one. */
+    fun activeCount(mode: TaskListMode): Int =
+        if (mode == TaskListMode.COMPLETED && status == StatusFilter.COMPLETED) copy(status = StatusFilter.OPEN).activeCount else activeCount
 }
 
 data class TaskSection(val title: String?, val items: List<TaskItem>, val isWarning: Boolean = false, val date: LocalDate? = null)
