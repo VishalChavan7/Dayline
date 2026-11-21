@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/VishalChavan7/Dayline/releases/latest"><img alt="Download for Android" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white"></a>
-  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.6"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
+  <a href="https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.7"><img alt="Download for Mac" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white"></a>
   <img alt="Offline first" src="https://img.shields.io/badge/offline-first-1757D0">
   <img alt="No ads, no tracking" src="https://img.shields.io/badge/ads%20%26%20tracking-none-555">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -29,14 +29,15 @@ https://github.com/user-attachments/assets/f7b61f04-65f1-4bd7-b25c-8e7d26689c76
 | | Get it | Needs |
 |---|---|---|
 | **Android** | [**Dayline for Android**](https://github.com/VishalChavan7/Dayline/releases/latest): download the `.apk` and open it on your phone | Android 8.0 or newer |
-| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.6): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
+| **Mac** | [**Dayline for Mac**](https://github.com/VishalChavan7/Dayline/releases/tag/mac-v1.3.7): download the `.zip`, open it and drag **Dayline** into Applications | macOS 14 Sonoma or newer, Apple silicon (M1 or later) |
 
-Both apps update themselves after you install them.
+The Mac app updates itself. The Android app tells you when a new version is out and opens its download page.
 
 <details>
 <summary>First time opening the apps</summary>
 
 - **Android:** allow installing from your browser or file manager when Android asks. If Play Protect says it hasn't seen the app before, tap **Scan app** and then **Install**.
+- **Android, coming from 1.1.8 or earlier:** version 1.2.0 is signed with Dayline's own key instead of a developer test key, so it can't install over the old app. Sync to Google Drive (Settings → Google sync → Sync now), uninstall Dayline, install 1.2.0 and sync again. This happens once.
 - **Mac:** Dayline isn't notarized by Apple yet, so the first time macOS says it can't verify the app. Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. You only need to do this once.
 </details>
 

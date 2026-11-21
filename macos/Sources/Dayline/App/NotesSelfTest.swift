@@ -228,6 +228,61 @@ enum NotesSelfTest {
         journalPanes.expand(nav); journalPanes.expand(nav)
         expect(journalPanes.layout == 2 && nav.sidebar == .all, "Journal: timeline, then the sidebar")
         UserDefaults.standard.removeObject(forKey: "selftest.journalLayout")
+        // A window with room for two columns: after the list, the next swipe brings back the app's sidebar
+        // (not a tags column that wouldn't show).
+        let narrow = NotesUI(layoutKey: "selftest.narrowLayout", maxLayout: 3)
+        narrow.capacity = 2; narrow.layout = 2; nav.sidebar = .detailOnly
+        narrow.expand(nav)
+        expect(narrow.layout == 2 && nav.sidebar == .all, "narrow window: the sidebar comes back next")
+        narrow.collapse(nav); narrow.collapse(nav); narrow.expand(nav)
+        expect(narrow.layout == 2 && nav.sidebar == .detailOnly, "narrow window: swiping back shows the list")
+        UserDefaults.standard.removeObject(forKey: "selftest.narrowLayout")
+
+        // Swipe recognition: a quick sideways swipe counts once; vertical scrolling and slight
+        // diagonals while scrolling don't; momentum never does.
+        func swipe(_ moves: [(CGFloat, CGFloat)]) -> [Bool] {
+            var t = SwipeTracker(); t.begin()
+            return moves.compactMap { t.move(mx: $0.0, my: $0.1) }
+        }
+        expect(swipe([(-4, 1), (-6, 2), (-10, 1), (-14, 3), (-20, 2)]) == [true], "right-to-left swipe")
+        expect(swipe([(5, 1), (9, 0), (12, 2), (20, 1)]) == [false], "left-to-right swipe")
+        expect(swipe([(-3, 4), (-6, 5), (-9, 8), (-12, 2), (-20, 0)]) == [true], "a slightly diagonal swipe still counts")
+        expect(swipe([(1, 6), (2, 10), (-20, 14), (-40, 20)]).isEmpty, "vertical scrolling isn't a swipe")
+        expect(swipe([(-10, 0), (-30, 0), (-40, 0), (-60, 0)]) == [true], "one report per swipe")
+
+        // Typing at the bottom of a long note: the page scrolls on so the line stays well above the
+        // window's edge and the floating format bar.
+        do {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 320), styleMask: [.titled], backing: .buffered, defer: false)
+            let sv = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 320))
+            let tv = NoteTextView.make(style: NoteStyle(dark: false))
+            tv.frame = NSRect(x: 0, y: 0, width: 500, height: 1)
+            sv.documentView = tv
+            sv.automaticallyAdjustsContentInsets = false
+            sv.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 110, right: 0)
+            sv.hasVerticalScroller = true
+            tv.caretRoom = 100
+            w.contentView = sv
+            tv.string = (1...60).map { "Line \($0)" }.joined(separator: "\n")
+            tv.layoutManager?.ensureLayout(for: tv.textContainer!)
+            tv.sizeToFit()
+            tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+            tv.keepCaretInView()
+            let caret = tv.caretLineRect() ?? .zero
+            let visible = sv.contentView.bounds
+            expect(caret.maxY > visible.minY && caret.maxY + 90 <= visible.maxY,
+                   "typing at the end keeps the line clear of the bottom (caret \(Int(caret.maxY)), visible \(Int(visible.minY))–\(Int(visible.maxY)), page \(Int(tv.frame.height)))")
+            // Checkboxes are drawn as large rounded boxes, with room after them for the box.
+            tv.string = NoteCodec.checkOpen + "Buy milk\n" + NoteCodec.checkDone + "Call Sam"
+            tv.decorate()
+            let kern = tv.textStorage?.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat ?? 0
+            let lm = tv.layoutManager!
+            lm.ensureLayout(for: tv.textContainer!)
+            let lineStart = lm.location(forGlyphAt: lm.glyphIndexForCharacter(at: 0)).x
+            let textStart = lm.location(forGlyphAt: lm.glyphIndexForCharacter(at: 2)).x
+            expect(textStart - lineStart >= 22, "text starts clear of an 18-point checkbox (gap \(Int(textStart - lineStart)), kern \(Int(kern)))")
+            expect(tv.toggleCheckbox(near: 0) && (tv.string as NSString).character(at: 0) == 0x2611, "clicking a big checkbox still ticks it")
+        }
 
         // Lists: Todo and Untagged are gone from Notes
         expect(NotesFilter.views.map(\.title) == ["Notes", "Today", "Locked", "Pinned", "Archive", "Trash"], "note lists")

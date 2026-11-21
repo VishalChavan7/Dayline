@@ -138,6 +138,40 @@ public final class NoteTextView: NSTextView, NSTextStorageDelegate {
     public override func didChangeText() {
         super.didChangeText()
         decorate()
+        if NSApp?.currentEvent?.type == .keyDown { keepCaretInView() }
+    }
+
+    /// Space kept below the line you're typing on, so it never ends up at the window's edge or
+    /// under the floating format bar: the page scrolls on ahead of you.
+    public var caretRoom: CGFloat = 0
+
+    public override func scrollRangeToVisible(_ range: NSRange) {
+        super.scrollRangeToVisible(range)
+        if NSApp?.currentEvent?.type == .keyDown { keepCaretInView() }
+    }
+
+    /// Scrolls just enough that the caret has [caretRoom] of space below it.
+    public func keepCaretInView() {
+        guard caretRoom > 0, enclosingScrollView != nil, let line = caretLineRect() else { return }
+        scrollToVisible(NSRect(x: line.minX, y: line.minY, width: 1, height: line.height + caretRoom))
+    }
+
+    /// The line the caret is on, in this view's coordinates (also at the very end of the text).
+    public func caretLineRect() -> NSRect? {
+        guard let lm = layoutManager, let tc = textContainer else { return nil }
+        lm.ensureLayout(for: tc)
+        let length = (string as NSString).length
+        let at = min(NSMaxRange(selectedRange()), length)
+        var line: NSRect
+        if at >= length, lm.extraLineFragmentTextContainer != nil, !lm.extraLineFragmentRect.isEmpty {
+            line = lm.extraLineFragmentRect   // after a final newline
+        } else if length > 0 {
+            line = lm.lineFragmentRect(forGlyphAt: lm.glyphIndexForCharacter(at: min(at, length - 1)), effectiveRange: nil)
+        } else {
+            return nil
+        }
+        line.origin.x += textContainerOrigin.x; line.origin.y += textContainerOrigin.y
+        return line
     }
 
     public override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
@@ -175,6 +209,77 @@ public final class NoteTextView: NSTextView, NSTextStorageDelegate {
             let block = ts.attribute(.dlBlock, at: m.range.location, effectiveRange: nil) as? String
             if block?.hasPrefix("code") == true || ts.attribute(.dlCode, at: m.range.location, effectiveRange: nil) != nil { continue }
             lm.addTemporaryAttributes([.foregroundColor: accent], forCharacterRange: m.range)
+        }
+        // Checkboxes: the ☐/☑ characters stay in the text (they're what syncs), but are drawn as
+        // large rounded boxes (see drawCheckboxes), with room after them for the box.
+        for (i, _) in checkboxes(in: all) {
+            lm.addTemporaryAttributes([.foregroundColor: NSColor.clear], forCharacterRange: NSRange(location: i, length: 1))
+            let font = (ts.attribute(.font, at: i, effectiveRange: nil) as? NSFont) ?? NoteStyle.font()
+            let advance = NSAttributedString(string: "\u{2610}", attributes: [.font: font]).size().width
+            let kern = max(0, (Self.checkSize + 6 - advance).rounded())
+            if (ts.attribute(.kern, at: i, effectiveRange: nil) as? CGFloat) != kern {
+                ts.addAttribute(.kern, value: kern, range: NSRange(location: i, length: 1))
+            }
+        }
+    }
+
+    /// Side of a checkbox, as on the phone (22 dp there, in a larger font).
+    static let checkSize: CGFloat = 18
+    /// Colour of a ticked box; the app sets it to the theme colour.
+    public var checkAccent: NSColor = .controlAccentColor { didSet { if checkAccent != oldValue { needsDisplay = true } } }
+
+    /// ☐/☑ characters at the start of a line in `range`, with whether each is ticked.
+    func checkboxes(in range: NSRange) -> [(Int, Bool)] {
+        let ns = string as NSString
+        guard ns.length > 0 else { return [] }
+        var out: [(Int, Bool)] = []
+        let lower = max(0, range.location), upper = min(ns.length, NSMaxRange(range))
+        var i = lower
+        while i < upper {
+            let ch = ns.character(at: i)
+            if (ch == 0x2610 || ch == 0x2611) && (i == 0 || ns.character(at: i - 1) == 10) { out.append((i, ch == 0x2611)) }
+            i += 1
+        }
+        return out
+    }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        drawCheckboxes(in: dirtyRect)
+    }
+
+    /// Rounded boxes like the phone's: an outline when open, filled with the theme colour and a
+    /// white tick when done.
+    func drawCheckboxes(in dirty: NSRect) {
+        guard let lm = layoutManager, let tc = textContainer, let ts = textStorage, ts.length > 0 else { return }
+        let origin = textContainerOrigin
+        let glyphs = lm.glyphRange(forBoundingRect: dirty.offsetBy(dx: -origin.x, dy: -origin.y), in: tc)
+        let chars = lm.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        // Start at the beginning of the first line so a box on a partly visible line is drawn too.
+        let from = (string as NSString).paragraphRange(for: NSRange(location: min(chars.location, ts.length), length: 0)).location
+        let s = Self.checkSize
+        for (i, done) in checkboxes(in: NSRange(location: from, length: NSMaxRange(chars) - from)) {
+            let g = lm.glyphIndexForCharacter(at: i)
+            let line = lm.lineFragmentRect(forGlyphAt: g, effectiveRange: nil)
+            let loc = lm.location(forGlyphAt: g)
+            let font = (ts.attribute(.font, at: i, effectiveRange: nil) as? NSFont) ?? NoteStyle.font()
+            // Centred on the text: halfway between the middle of capitals and of lowercase letters.
+            let baseline = line.minY + loc.y + origin.y
+            let midY = baseline - (font.capHeight + font.xHeight) / 4
+            let box = NSRect(x: line.minX + loc.x + origin.x + 1, y: midY - s / 2, width: s, height: s)
+            let path = NSBezierPath(roundedRect: box.insetBy(dx: done ? 0 : 0.9, dy: done ? 0 : 0.9), xRadius: 5, yRadius: 5)
+            if done {
+                checkAccent.setFill(); path.fill()
+                let tick = NSBezierPath()
+                tick.move(to: NSPoint(x: box.minX + s * 0.26, y: box.midY + s * 0.02))
+                tick.line(to: NSPoint(x: box.minX + s * 0.43, y: box.minY + s * 0.70))
+                tick.line(to: NSPoint(x: box.minX + s * 0.76, y: box.minY + s * 0.31))
+                tick.lineWidth = 2; tick.lineCapStyle = .round; tick.lineJoinStyle = .round
+                NSColor.white.setStroke(); tick.stroke()
+            } else {
+                path.lineWidth = 1.8
+                style.secondaryInk.setStroke(); path.stroke()
+            }
         }
     }
 

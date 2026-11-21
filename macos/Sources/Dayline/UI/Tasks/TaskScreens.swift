@@ -7,16 +7,12 @@ struct UpcomingView: View {
     @EnvironmentObject var store: Store
     var body: some View {
         let today = store.today
-        let open = store.openTasks
-        let overdue = open.filter { $0.isOverdue(today) }.sorted(by: TaskGrouping.chronological)
-        let todays = TaskGrouping.onDay(open, today).filter { !$0.isOverdue(today) }.sorted(by: TaskGrouping.chronological)
+        // Only tomorrow or later: today's and overdue tasks live on Today.
         var buckets: [UpcomingBucket: [TaskItem]] = [:]
-        for t in open { if let d = t.scheduledDate, let b = TaskGrouping.bucket(d, today: today, weekStart: store.weekStart) { buckets[b, default: []].append(t) } }
-        let total = overdue.count + todays.count + buckets.values.reduce(0) { $0 + $1.count }
+        for t in store.openTasks { if let d = t.scheduledDate, let b = TaskGrouping.bucket(d, today: today, weekStart: store.weekStart) { buckets[b, default: []].append(t) } }
+        let total = buckets.values.reduce(0) { $0 + $1.count }
         return TaskScreen(title: "Upcoming", subtitle: countText(total), quickAdd: QuickAddField(date: today.plusDays(1), placeholder: "Add a task for tomorrow — or type a day"),
-                          isEmpty: total == 0, empty: EmptyState(symbol: "calendar.badge.clock", title: "Nothing planned", message: "Tasks with a date show up here, grouped by when they're due.")) {
-            TaskSection(title: "Overdue", tasks: overdue, color: StatusColor.overdue)
-            TaskSection(title: "Today", tasks: todays)
+                          isEmpty: total == 0, empty: EmptyState(symbol: "calendar.badge.clock", title: "Nothing upcoming", message: "Tasks for tomorrow or later show up here, grouped by when they're due.")) {
             ForEach(UpcomingBucket.allCases, id: \.self) { b in
                 TaskSection(title: b.label, tasks: (buckets[b] ?? []).sorted(by: TaskGrouping.chronological))
             }

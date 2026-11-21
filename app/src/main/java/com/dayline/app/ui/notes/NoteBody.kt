@@ -1,6 +1,16 @@
 package com.dayline.app.ui.notes
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -518,6 +528,21 @@ internal fun TextSegmentEditor(
             lines = now
         }
     }
+    // Keep the line you're typing on in view, with room to spare above the keyboard and toolbar:
+    // after each keystroke, caret move, and whenever the keyboard opens or changes height.
+    val bring = remember { BringIntoViewRequester() }
+    val density = LocalDensity.current
+    val ime by rememberUpdatedState(WindowInsets.ime.getBottom(density))
+    val room = with(density) { 48.dp.toPx() }
+    LaunchedEffect(rich, focused) {
+        if (!focused) return@LaunchedEffect
+        snapshotFlow { Triple(rich.selection.max, layout, ime) }.collectLatest { (caret, l, _) ->
+            l ?: return@collectLatest
+            withFrameNanos { } // let the page resize for the keyboard first
+            val c = l.getCursorRect(caret.coerceIn(0, l.layoutInput.text.length))
+            runCatching { bring.bringIntoView(Rect(c.left, c.top - room / 2, c.right, c.bottom + room)) }
+        }
+    }
     // Asked to take focus (e.g. tapping the blank page below the note).
     LaunchedEffect(body.focusTarget) {
         if (body.focusTarget != seg.key) return@LaunchedEffect
@@ -532,6 +557,7 @@ internal fun TextSegmentEditor(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = minHeight)
+            .bringIntoViewRequester(bring)
             .focusRequester(seg.focus)
             .onFocusChanged { f ->
                 focused = f.isFocused

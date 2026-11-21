@@ -112,21 +112,31 @@ final class NotesUI: ObservableObject {
     // the app's sidebar, then the tags column, then the list, until only the editor is left.
     // Swiping left to right (or ››) brings them back in the opposite order.
 
+    /// How many columns the window has room for right now (nil: all of them). Set by the view.
+    var capacity: Int?
+    private var room: Int { min(maxLayout, capacity ?? maxLayout) }
+
+    /// The slide used when a pane is hidden or shown.
+    static let paneAnimation = Animation.smooth(duration: 0.32)
+
     /// `shown`: how many columns fit right now (a narrow window may already hide some).
-    func canCollapse(_ nav: Navigator, shown: Int? = nil) -> Bool { nav.sidebar != .detailOnly || min(layout, shown ?? layout) > 1 }
-    func canExpand(_ nav: Navigator) -> Bool { layout < maxLayout || nav.sidebar == .detailOnly }
+    func canCollapse(_ nav: Navigator, shown: Int? = nil) -> Bool { nav.sidebar != .detailOnly || min(layout, shown ?? room) > 1 }
+    func canExpand(_ nav: Navigator) -> Bool { min(layout, room) < room || nav.sidebar == .detailOnly }
 
     func collapse(_ nav: Navigator, shown: Int? = nil) {
-        withAnimation(.snappy(duration: 0.25)) {
+        withAnimation(Self.paneAnimation) {
             if nav.sidebar != .detailOnly { nav.sidebar = .detailOnly; return }
-            let current = min(layout, shown ?? layout)
+            let current = min(layout, shown ?? room)
             if current > 1 { layout = current - 1 }
         }
     }
 
+    /// Brings back the next pane that will actually appear: when the window has no room for another
+    /// column, the app's sidebar comes back instead of a column that wouldn't show.
     func expand(_ nav: Navigator) {
-        withAnimation(.snappy(duration: 0.25)) {
-            if layout < maxLayout { layout += 1 } else if nav.sidebar == .detailOnly { nav.sidebar = .all }
+        withAnimation(Self.paneAnimation) {
+            let current = min(layout, room)
+            if current < room { layout = current + 1 } else if nav.sidebar == .detailOnly { nav.sidebar = .all }
         }
     }
 }

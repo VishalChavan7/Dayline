@@ -1,5 +1,6 @@
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -11,9 +12,27 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
+/** Release signing details, kept out of git in keystore.properties (see keys/ on the build Mac). */
+val releaseKey: Properties? = rootProject.file("keystore.properties").takeIf { it.exists() }
+    ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+
 android {
     namespace = "com.dayline.app"
     compileSdk = 36
+
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseKey.getProperty("storeFile"))
+                storePassword = releaseKey.getProperty("storePassword")
+                keyAlias = releaseKey.getProperty("keyAlias")
+                keyPassword = releaseKey.getProperty("keyPassword")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.dayline.app"
@@ -23,7 +42,7 @@ android {
         // screen never keep a cached icon or label from an earlier install.
         val buildStamp = ((System.currentTimeMillis() - 1_767_225_600_000L) / 60_000L).toInt().coerceAtLeast(2)
         versionCode = buildStamp
-        versionName = "1.1.8"
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
@@ -39,9 +58,9 @@ android {
             // into drawables) in ways some launchers handle badly. Code is still minified.
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the local debug key so the optimized build can be side-loaded for testing.
-            // Replace with a real signing config before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            // Signed with Dayline's own release key. Without keystore.properties (another machine)
+            // it falls back to the debug key, which can't update an installed release build.
+            signingConfig = if (releaseKey != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 
@@ -148,27 +167,28 @@ dependencies {
 
 
 /**
- * Writes the signing certificate fingerprint Google needs for "Google sync" (an Android OAuth
- * client for com.dayline.app) to outputs/google-sync-setup.txt after every debug build.
+ * Writes the signing certificate fingerprints Google needs for "Google sync" (an Android OAuth
+ * client per package) to outputs/google-sync-setup.txt after every build.
  */
 val writeGoogleSyncSetup by tasks.registering {
     doLast {
-        val ks = File(System.getProperty("user.home"), ".android/debug.keystore")
         val out = rootProject.file("outputs/google-sync-setup.txt")
         out.parentFile.mkdirs()
-        if (!ks.exists()) { out.writeText("No debug keystore found at $ks\n"); return@doLast }
-        val store = KeyStore.getInstance(KeyStore.getDefaultType())
-        ks.inputStream().use { store.load(it, "android".toCharArray()) }
-        val cert = store.getCertificate("androiddebugkey")
-        fun fp(alg: String) = MessageDigest.getInstance(alg).digest(cert.encoded).joinToString(":") { "%02X".format(it) }
+        fun fps(file: File, storePass: String, alias: String): String {
+            if (!file.exists()) return "  (no keystore at $file)"
+            val store = KeyStore.getInstance(if (file.name.endsWith(".jks")) "PKCS12" else KeyStore.getDefaultType())
+            file.inputStream().use { store.load(it, storePass.toCharArray()) }
+            val cert = store.getCertificate(alias)
+            fun fp(alg: String) = MessageDigest.getInstance(alg).digest(cert.encoded).joinToString(":") { "%02X".format(it) }
+            return "  SHA-1:   ${fp("SHA-1")}\n  SHA-256: ${fp("SHA-256")}"
+        }
+        val release = releaseKey?.let { fps(rootProject.file(it.getProperty("storeFile")), it.getProperty("storePassword"), it.getProperty("keyAlias")) }
+            ?: "  (no keystore.properties: release builds use the debug key)"
+        val debug = fps(File(System.getProperty("user.home"), ".android/debug.keystore"), "android", "androiddebugkey")
         out.writeText(
-            """
-            Google sync setup for Dayline
-            Package name (release APK): com.dayline.app
-            Package name (debug APK):   com.dayline.app.debug
-            SHA-1:   ${fp("SHA-1")}
-            SHA-256: ${fp("SHA-256")}
-            """.trimIndent() + "\n",
+            "Google sync setup for Dayline\n\n" +
+                "Release APK, package com.dayline.app:\n$release\n\n" +
+                "Debug APK, package com.dayline.app.debug:\n$debug\n",
         )
     }
 }

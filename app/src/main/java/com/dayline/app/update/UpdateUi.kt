@@ -38,9 +38,9 @@ class UpdateViewModel @Inject constructor(private val updates: UpdateManager) : 
         updates.checkSoonIfStale()
     }
 
-    fun check() = viewModelScope.launch { updates.checkAndDownload(notify = false) }
+    fun check() = viewModelScope.launch { updates.check(notify = false) }
     fun later(version: String) { dismissed = dismissed + version }
-    fun install(ready: UpdateState.Ready) { updates.install(ready.apk) }
+    fun open(available: UpdateState.Available) { updates.open(available.release) }
 }
 
 /** One-line status for the "Check for updates" tile. */
@@ -48,19 +48,18 @@ fun updateCaption(state: UpdateState, current: String): String = when (state) {
     UpdateState.Idle -> "Version $current"
     UpdateState.Checking -> "Checking…"
     UpdateState.UpToDate -> "Version $current · up to date"
-    is UpdateState.Downloading -> "Downloading ${state.release.version} · ${(state.progress * 100).toInt()}%"
-    is UpdateState.Ready -> "Version ${state.release.version} is ready · tap to install"
+    is UpdateState.Available -> "Version ${state.release.version} is out · tap to download"
     is UpdateState.Failed -> state.message
 }
 
 /**
- * "Update available" popup, shown over the app whenever a downloaded update is waiting and hasn't
+ * "Update available" popup, shown over the app whenever a newer version is out and hasn't
  * been put off this session. [force] shows it even after "Later" (opened from the notification).
  */
 @Composable
 fun UpdatePrompt(vm: UpdateViewModel, force: Boolean, onForceHandled: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val ready = state as? UpdateState.Ready ?: run { if (force) onForceHandled(); return }
+    val ready = state as? UpdateState.Available ?: run { if (force) onForceHandled(); return }
     if (!force && ready.release.version in vm.dismissed) return
     val notes = UpdateManager.summary(ready.release.notes)
     AlertDialog(
@@ -69,7 +68,7 @@ fun UpdatePrompt(vm: UpdateViewModel, force: Boolean, onForceHandled: () -> Unit
         title = { Text("Update available") },
         text = {
             Column {
-                Text("Dayline ${ready.release.version} is downloaded and ready to install. You're on ${vm.currentVersion}.")
+                Text("Dayline ${ready.release.version} is out. You're on ${vm.currentVersion}. Update opens its page on GitHub, where you can download it.")
                 if (notes.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text("What's new", style = MaterialTheme.typography.titleSmall)
@@ -78,7 +77,7 @@ fun UpdatePrompt(vm: UpdateViewModel, force: Boolean, onForceHandled: () -> Unit
                 }
             }
         },
-        confirmButton = { Button(onClick = { vm.install(ready); vm.later(ready.release.version); onForceHandled() }) { Text("Update now") } },
+        confirmButton = { Button(onClick = { vm.open(ready); vm.later(ready.release.version); onForceHandled() }) { Text("Update") } },
         dismissButton = { TextButton(onClick = { vm.later(ready.release.version); onForceHandled() }) { Text("Later") } },
     )
 }

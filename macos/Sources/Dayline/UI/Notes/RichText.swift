@@ -39,6 +39,7 @@ struct RichTextEditor: NSViewRepresentable {
     var zoom: CGFloat = 1
     var onOpenNote: (String) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scheme) private var scheme
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -51,7 +52,9 @@ struct RichTextEditor: NSViewRepresentable {
         scroll.contentView.postsFrameChangedNotifications = true
         context.coordinator.observe(scroll)
         scroll.automaticallyAdjustsContentInsets = false
-        scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 70, right: 0)
+        // Room to scroll past the end, and to keep the typing line clear of the floating format bar.
+        scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 110, right: 0)
+        tv.caretRoom = 100
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -63,6 +66,7 @@ struct RichTextEditor: NSViewRepresentable {
         tv.onStateChange = { [weak controller] s in controller?.state = s }
         tv.onOpenNote = { context.coordinator.parent.onOpenNote($0) }
         tv.isEditable = editable
+        tv.checkAccent = NSColor(scheme.primary)
         context.coordinator.lastHTML = html
         controller.textView = tv
         EditorHub.shared.current = tv
@@ -76,6 +80,7 @@ struct RichTextEditor: NSViewRepresentable {
         EditorHub.shared.current = tv
         let style = NoteStyle(dark: colorScheme == .dark)
         if tv.style != style { tv.setStyle(style) }
+        tv.checkAccent = NSColor(scheme.primary)
         if tv.isEditable != editable { tv.isEditable = editable }
         if abs(scroll.magnification - zoom) > 0.001 { scroll.magnification = zoom }
         let w = scroll.contentView.bounds.width

@@ -166,7 +166,8 @@ object SampleData {
         Note(id = 6, title = "Wi-Fi", body = "<p>Guest network: <b>dayline-guest</b></p>"),
     )
 
-    fun notesState() = com.dayline.app.ui.notes.NotesUiState(loading = false, notes = notes, total = notes.size, categories = listOf("work", "ideas"))
+    fun notesState() = com.dayline.app.ui.notes.NotesUiState(loading = false, notes = notes, total = notes.size, categories = listOf("work", "ideas"),
+        counts = mapOf("pinned" to notes.count { it.isPinned }, "tag:work" to notes.count { "work" in it.category.orEmpty() }, "tag:ideas" to notes.count { "ideas" in it.category.orEmpty() }))
 
     fun editorOptions() = com.dayline.app.ui.tasks.EditorOptions(projects = listOf(work, home))
 

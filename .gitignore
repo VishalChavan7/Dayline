@@ -15,6 +15,9 @@
 *.aab
 *.jks
 *.keystore
+# Release signing key and its passwords: never commit these.
+/keys/
+keystore.properties
 build-helper.sh
 
 # Mac app build output

@@ -1,9 +1,41 @@
 import SwiftUI
 import AppKit
 
-/// Reports a two-finger sideways swipe on the trackpad over the view it sits behind.
-/// `true` = fingers moved right to left. One report per swipe; vertical scrolling and views
-/// that scroll sideways themselves (a row of chips, a wide table) are left alone.
+/// Decides whether a two-finger trackpad gesture is a sideways swipe, and which way.
+/// Kept apart from the view so the rules can be tested.
+struct SwipeTracker {
+    enum State { case idle, deciding, sideways, ignored, fired }
+    private(set) var state: State = .idle
+    private var dx: CGFloat = 0
+    private var dy: CGFloat = 0
+
+    /// Movement before the gesture is judged sideways or not.
+    static let decideAfter: CGFloat = 8
+    /// Sideways movement that counts as a swipe.
+    static let fireAfter: CGFloat = 32
+
+    mutating func begin() { state = .deciding; dx = 0; dy = 0 }
+    mutating func end() { state = .idle }
+
+    /// `mx`: finger movement, positive = to the right. Returns the direction once per gesture
+    /// (`true` = right to left); vertical scrolling is left alone.
+    mutating func move(mx: CGFloat, my: CGFloat) -> Bool? {
+        guard state == .deciding || state == .sideways else { return nil }
+        dx += mx; dy += abs(my)
+        if state == .deciding {
+            guard abs(dx) + dy >= Self.decideAfter else { return nil }
+            state = abs(dx) >= dy ? .sideways : .ignored
+            if state == .ignored { return nil }
+        }
+        guard abs(dx) >= Self.fireAfter else { return nil }
+        state = .fired
+        return dx < 0
+    }
+}
+
+/// Reports a two-finger sideways swipe on the trackpad anywhere over the view it sits behind,
+/// including over the note editor. `true` = fingers moved right to left. One report per swipe;
+/// vertical scrolling and views that scroll sideways themselves (a row of chips) are left alone.
 struct SwipeCatcher: NSViewRepresentable {
     var onSwipe: (_ leftward: Bool) -> Void
 
@@ -18,10 +50,7 @@ struct SwipeCatcher: NSViewRepresentable {
     final class CatcherView: NSView {
         var onSwipe: ((Bool) -> Void)?
         private var monitor: Any?
-        private var dx: CGFloat = 0
-        private var dy: CGFloat = 0
-        private var fired = false
-        private var tracking = false
+        private var tracker = SwipeTracker()
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }   // never takes clicks
 
@@ -41,26 +70,27 @@ struct SwipeCatcher: NSViewRepresentable {
         deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
 
         func handle(_ e: NSEvent) {
-            guard let window, e.window === window, e.momentumPhase.isEmpty else { return }
-            if e.phase.contains(.began) {
+            guard let window, e.window === window, !isHiddenOrHasHiddenAncestor else { return }
+            // Momentum after the fingers lift never starts or continues a swipe.
+            guard e.momentumPhase.isEmpty else { tracker.end(); return }
+            if e.phase.contains(.mayBegin) || e.phase.contains(.began) {
                 let p = convert(e.locationInWindow, from: nil)
-                tracking = bounds.contains(p) && !scrollsSideways(at: e.locationInWindow)
-                dx = 0; dy = 0; fired = false
+                if bounds.contains(p) && !scrollsSideways(at: e.locationInWindow) { tracker.begin() } else { tracker.end() }
             }
-            guard tracking, e.phase.contains(.began) || e.phase.contains(.changed) else { return }
+            if e.phase.contains(.ended) || e.phase.contains(.cancelled) { tracker.end(); return }
             // Finger movement: positive = to the right, with natural scrolling on or off.
-            dx += e.isDirectionInvertedFromDevice ? e.scrollingDeltaX : -e.scrollingDeltaX
-            dy += abs(e.scrollingDeltaY)
-            guard !fired, abs(dx) > 60, abs(dx) > dy * 1.6 else { return }
-            fired = true
-            onSwipe?(dx < 0)
+            let mx = e.isDirectionInvertedFromDevice ? e.scrollingDeltaX : -e.scrollingDeltaX
+            let my = e.scrollingDeltaY
+            if let leftward = tracker.move(mx: mx, my: my) { onSwipe?(leftward) }
         }
 
-        /// True over a scroll view whose content is wider than it is, so it needs sideways scrolling.
+        /// True over a view that scrolls sideways itself (content wider than its frame).
+        /// The note editor never does, so swipes over the text always work.
         private func scrollsSideways(at point: NSPoint) -> Bool {
             var v = window?.contentView?.hitTest(point)
             while let view = v {
-                if let s = view as? NSScrollView, let doc = s.documentView, doc.frame.width > s.contentView.bounds.width + 1 { return true }
+                if let s = view as? NSScrollView, let doc = s.documentView, !(doc is NSTextView),
+                   doc.frame.width > s.contentView.bounds.width + 8 { return true }
                 v = view.superview
             }
             return false

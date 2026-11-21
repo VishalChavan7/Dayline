@@ -73,12 +73,12 @@ class MoreViewModel @Inject constructor(tasks: TaskRepository, clock: AppClock, 
     val update: StateFlow<com.dayline.app.update.UpdateState> = updates.state
     val currentVersion: String get() = updates.currentVersion
 
-    /** "Check for updates": install a ready update, otherwise look for one now. */
+    /** "Check for updates": open a found update's page, otherwise look for one now. */
     fun onUpdateTile() {
         when (val s = updates.state.value) {
-            is com.dayline.app.update.UpdateState.Ready -> updates.install(s.apk)
-            is com.dayline.app.update.UpdateState.Checking, is com.dayline.app.update.UpdateState.Downloading -> Unit
-            else -> viewModelScope.launch { updates.checkAndDownload(notify = false) }
+            is com.dayline.app.update.UpdateState.Available -> updates.open(s.release)
+            is com.dayline.app.update.UpdateState.Checking -> Unit
+            else -> viewModelScope.launch { updates.check(notify = false) }
         }
     }
 

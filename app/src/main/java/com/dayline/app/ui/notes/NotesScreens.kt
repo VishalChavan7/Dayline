@@ -50,6 +50,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -338,7 +339,8 @@ class NotesViewModel @Inject constructor(
         val today = time.now().atZone(zone).toLocalDate()
         val live = all.filter { !it.isJournal() && it.archivedAt == null && it.trashedAt == null }
         val tags = live.flatMap { it.labels() }.flatMap { com.dayline.app.core.domain.NoteFormat.tagPath(it) }.distinct().sorted()
-        val counts = NOTE_VIEWS.associate { (k, _) -> k to filterNotes(all, k, "", sort, false, today, zone).size }
+        val counts = NOTE_VIEWS.associate { (k, _) -> k to filterNotes(all, k, "", sort, false, today, zone).size } +
+            tags.associate { t -> "tag:$t" to live.count { n -> n.labels().any { com.dayline.app.core.domain.NoteFormat.tagMatches(it, t) } } }
         NotesUiState(false, filterNotes(all, v, q, sort, pinnedFirst, today, zone), live.size, tags, v, q, g, icons, sort, pinnedFirst, counts)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotesUiState())
 
@@ -548,13 +550,13 @@ private fun LabelRow(state: NotesUiState, actions: NotesActions, modifier: Modif
         NOTE_VIEWS.forEach { (k, name) ->
             val count = state.counts[k] ?: 0
             if (k == "all" || k == state.view || (count > 0 && k != "all")) {
-                LabelChip(if (k == "all" || k == "trash" || k == "archive") name else "$name $count", null, state.view == k, onClick = { actions.onView(k) })
+                LabelChip(name, null, state.view == k, onClick = { actions.onView(k) }, count = count.takeUnless { k == "all" || k == "trash" || k == "archive" })
             }
         }
         // Tags, parents before children (#work, then #work/meetings).
         state.categories.forEach { c ->
             val on = state.view == "tag:$c"
-            LabelChip(c, labelIcon(c), on, onClick = { actions.onView(if (on) "all" else "tag:$c") }, onLongClick = { actions.onEditLabel(c) })
+            LabelChip(c, labelIcon(c), on, onClick = { actions.onView(if (on) "all" else "tag:$c") }, onLongClick = { actions.onEditLabel(c) }, count = state.counts["tag:$c"])
         }
     }
 }
@@ -572,7 +574,7 @@ private fun GroupLabel(text: String) {
 }
 
 @Composable
-private fun LabelChip(text: String, icon: ImageVector?, selected: Boolean, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
+private fun LabelChip(text: String, icon: ImageVector?, selected: Boolean, onClick: () -> Unit, onLongClick: (() -> Unit)? = null, count: Int? = null) {
     val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier
@@ -588,6 +590,30 @@ private fun LabelChip(text: String, icon: ImageVector?, selected: Boolean, onCli
             Spacer(Modifier.width(6.dp))
         }
         Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        if (count != null) {
+            Spacer(Modifier.width(6.dp))
+            CountBadge(count)
+        }
+    }
+}
+
+/** A note count in a small circle of the theme colour (a pill once it needs three digits). */
+@Composable
+fun CountBadge(count: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary)
+            .padding(horizontal = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (count > 999) "999+" else count.toString(),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onPrimary,
+            maxLines = 1,
+        )
     }
 }
 

@@ -18,6 +18,8 @@ struct NotesView: View {
                 .background(SwipeCatcher { leftward in
                     if leftward { ui.collapse(nav, shown: shown(width: geo.size.width)) } else { ui.expand(nav) }
                 })
+                .onAppear { ui.capacity = capacity(width: geo.size.width) }
+                .onChange(of: capacity(width: geo.size.width)) { _, c in ui.capacity = c }
         }
         .navigationTitle("Notes")
         .sheet(item: Binding(get: { editingLabel.map(LabelRef.init) }, set: { editingLabel = $0?.name })) { ref in
@@ -33,25 +35,25 @@ struct NotesView: View {
 
     /// The panes that fit: the editor keeps at least 440 points; the tags column, then the list, give way first.
     /// Columns shown at this width: 1 = editor, 2 = list and editor, 3 = tags, list and editor.
-    func shown(width: CGFloat) -> Int {
+    func shown(width: CGFloat) -> Int { min(ui.layout, capacity(width: width)) }
+
+    /// Columns there's room for at this width, whatever was chosen.
+    func capacity(width: CGFloat) -> Int {
         let panel: CGFloat = ui.panel != nil && ui.selected != nil ? 250 : 0
-        let showList = ui.layout >= 2 && width - panel - 300 >= 440
-        let showTags = ui.layout >= 3 && showList && width - panel - 300 - 200 >= 440
-        return showTags ? 3 : showList ? 2 : 1
+        let list = width - panel - 300 >= 440
+        let tags = list && width - panel - 300 - 200 >= 440
+        return tags ? 3 : list ? 2 : 1
     }
 
     func panes(width: CGFloat) -> some View {
         let columns = shown(width: width)
         let showList = columns >= 2, showTags = columns >= 3
+        // Hidden columns stay in place at zero width, so hiding and showing them slides smoothly.
         return HStack(spacing: 0) {
-            if showTags {
-                NotesSidebar(editingLabel: $editingLabel).frame(width: 200)
-                Divider()
-            }
-            if showList {
-                listPane(compactFilters: !showTags).frame(width: 300)
-                Divider()
-            }
+            NotesSidebar(editingLabel: $editingLabel).frame(width: 200)
+                .slidingPane(width: 200, shown: showTags)
+            listPane(compactFilters: !showTags).frame(width: 300)
+                .slidingPane(width: 300, shown: showList)
             HStack(spacing: 0) {
                 Group {
                     if let id = ui.selected {
@@ -688,6 +690,20 @@ enum NotePage {
     static let range = 0.0...120.0
     /// Longest comfortable line when "Limit line length" is on.
     static let lineWidth = 760.0
+}
+
+extension View {
+    /// A column that slides closed (to zero width, its content moving off to the left) and back
+    /// open, with a divider on its right. Hidden columns don't take clicks or keyboard focus.
+    func slidingPane(width: CGFloat, shown: Bool) -> some View {
+        self
+            .frame(width: shown ? width + 1 : 0, alignment: .trailing)
+            .overlay(alignment: .trailing) { Divider() }
+            .clipped()
+            .allowsHitTesting(shown)
+            .accessibilityHidden(!shown)
+            .disabled(!shown)
+    }
 }
 
 /// ‹‹ hides the next pane on the left (the app's sidebar first), ›› brings one back. Same as swiping.

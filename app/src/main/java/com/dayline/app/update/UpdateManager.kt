@@ -6,13 +6,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -50,26 +49,22 @@ data class ReleaseInfo(
     val title: String,
     val notes: String,
     val pageUrl: String,
-    val apkUrl: String,
-    val apkSize: Long,
 )
 
 sealed interface UpdateState {
     data object Idle : UpdateState
     data object Checking : UpdateState
     data object UpToDate : UpdateState
-    data class Downloading(val release: ReleaseInfo, val progress: Float) : UpdateState
-    /** Downloaded, verified and ready: one tap opens Android's installer. */
-    data class Ready(val release: ReleaseInfo, val apk: File) : UpdateState
+    /** A newer release is out; Update opens its GitHub page to download it. */
+    data class Available(val release: ReleaseInfo) : UpdateState
     data class Failed(val message: String) : UpdateState
 }
 
 /**
- * Keeps Dayline up to date from the project's GitHub Releases.
+ * Tells you when a newer Dayline is published on the project's GitHub Releases.
  *
- * Checks the latest release, downloads its APK in the background, verifies that it is Dayline signed
- * with the same key and newer than this install, then offers a one-tap update (notification + popup).
- * Android always shows its own installer confirmation; nothing installs silently.
+ * It only reads the release list. Dayline never downloads or installs app files itself: Update opens
+ * the release page in your browser, and you download and install the new version from there.
  */
 @Singleton
 class UpdateManager @Inject constructor(@ApplicationContext private val context: Context) {
@@ -80,34 +75,31 @@ class UpdateManager @Inject constructor(@ApplicationContext private val context:
 
     val currentVersion: String = BuildConfig.VERSION_NAME.substringBefore('-')
 
-    /** Debug builds have a different package id, so a release APK can't update them. */
+    /** Debug builds have a different package id, so they don't look for updates in the background. */
     val supported: Boolean get() = !BuildConfig.DEBUG
 
     init {
-        restoreReady()
+        // Files left by versions that downloaded updates themselves.
+        File(context.cacheDir, "updates").deleteRecursively()
+        restoreAvailable()
     }
 
     /**
-     * Looks for a newer release and downloads it. [notify] posts a notification when an update is
-     * ready (used by the background check); the in-app popup handles the foreground case.
+     * Looks for a newer release. [notify] posts a notification when one is out (used by the
+     * background check); the in-app popup handles the foreground case.
      */
-    suspend fun checkAndDownload(notify: Boolean): UpdateState = mutex.withLock {
-        (_state.value as? UpdateState.Ready)?.let { if (it.apk.exists()) { if (notify) notifyReady(it.release); return@withLock it } }
+    suspend fun check(notify: Boolean): UpdateState = mutex.withLock {
         _state.value = UpdateState.Checking
         val result = runCatching {
             val release = withContext(Dispatchers.IO) { fetchLatest() }
             prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply()
             if (release == null || !isNewer(release.version, currentVersion)) {
-                cleanup()
+                forget()
                 UpdateState.UpToDate
-            } else if (!supported) {
-                UpdateState.Failed("Version ${release.version} is out. Developer builds can't update themselves; install it from GitHub.")
             } else {
-                val apk = withContext(Dispatchers.IO) { download(release) }
-                verify(apk)
-                save(release, apk)
-                if (notify) notifyReady(release)
-                UpdateState.Ready(release, apk)
+                save(release)
+                if (notify) notifyAvailable(release)
+                UpdateState.Available(release)
             }
         }.getOrElse { e -> UpdateState.Failed(e.message ?: "Couldn't check for updates.") }
         _state.value = result
@@ -121,15 +113,12 @@ class UpdateManager @Inject constructor(@ApplicationContext private val context:
         if (System.currentTimeMillis() - last > TimeUnit.HOURS.toMillis(olderThanHours)) UpdateScheduler.now(context)
     }
 
-    /** Intent for Android's installer with the downloaded APK (one tap to "Update"). */
-    fun installIntent(apk: File): Intent {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", apk)
-        return Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
+    /** Opens the release's page in the browser, where the new APK can be downloaded. */
+    fun pageIntent(release: ReleaseInfo): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse(release.pageUrl.ifBlank { "https://github.com/$REPO/releases/latest" }))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    fun install(apk: File) = runCatching { context.startActivity(installIntent(apk)) }.isSuccess
+    fun open(release: ReleaseInfo) = runCatching { context.startActivity(pageIntent(release)) }.isSuccess
 
     // ---------------------------------------------------------------- GitHub
 
@@ -137,17 +126,13 @@ class UpdateManager @Inject constructor(@ApplicationContext private val context:
         val json = get("https://api.github.com/repos/$REPO/releases/latest")
         val root = JSONObject(json)
         if (root.optBoolean("draft") || root.optBoolean("prerelease")) return null
-        val assets = root.optJSONArray("assets") ?: return null
-        val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
-            .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) } ?: return null
         val tag = root.optString("tag_name").removePrefix("v").removePrefix("V")
+        if (tag.isBlank()) return null
         return ReleaseInfo(
             version = tag,
             title = root.optString("name").ifBlank { "Dayline $tag" },
             notes = root.optString("body"),
             pageUrl = root.optString("html_url"),
-            apkUrl = apk.getString("browser_download_url"),
-            apkSize = apk.optLong("size", -1L),
         )
     }
 
@@ -164,90 +149,35 @@ class UpdateManager @Inject constructor(@ApplicationContext private val context:
         } finally { c.disconnect() }
     }
 
-    private fun download(release: ReleaseInfo): File {
-        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
-        val target = File(dir, "Dayline-${release.version}.apk")
-        if (target.exists() && (release.apkSize <= 0 || target.length() == release.apkSize)) return target
-        dir.listFiles()?.forEach { it.delete() }
-        val part = File(dir, target.name + ".part")
-        // GitHub redirects asset downloads (https → https) to its storage host; followed automatically.
-        val c = (URL(release.apkUrl).openConnection() as HttpURLConnection).apply {
-            instanceFollowRedirects = true
-            connectTimeout = 15_000; readTimeout = 30_000
-            setRequestProperty("User-Agent", "Dayline/$currentVersion")
-        }
-        try {
-            if (c.responseCode !in 200..299) error("Download failed (${c.responseCode}).")
-            val total = release.apkSize.takeIf { it > 0 } ?: c.contentLengthLong
-            c.inputStream.use { input ->
-                part.outputStream().use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    var read = 0L
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        read += n
-                        if (total > 0) _state.value = UpdateState.Downloading(release, (read.toFloat() / total).coerceIn(0f, 1f))
-                    }
-                }
-            }
-        } finally { c.disconnect() }
-        if (release.apkSize > 0 && part.length() != release.apkSize) { part.delete(); error("The download was incomplete. Try again.") }
-        if (!part.renameTo(target)) error("Couldn't save the update.")
-        return target
-    }
-
-    /** The APK must be Dayline, newer than this install, and signed with the same key. */
-    private fun verify(apk: File) {
-        val pm = context.packageManager
-        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
-        val archive = pm.getPackageArchiveInfo(apk.path, flags)
-        val installed = pm.getPackageInfo(context.packageName, flags)
-        val ok = archive != null && archive.packageName == context.packageName &&
-            versionCode(archive) > versionCode(installed) && signers(archive) == signers(installed) && signers(installed).isNotEmpty()
-        if (!ok) { apk.delete(); error("The downloaded update couldn't be verified, so it was discarded.") }
-    }
-
-    private fun versionCode(p: PackageInfo): Long = if (Build.VERSION.SDK_INT >= 28) p.longVersionCode else @Suppress("DEPRECATION") p.versionCode.toLong()
-
-    private fun signers(p: PackageInfo): Set<String> {
-        val sigs = if (Build.VERSION.SDK_INT >= 28) p.signingInfo?.apkContentsSigners else @Suppress("DEPRECATION") p.signatures
-        return sigs.orEmpty().map { java.security.MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).joinToString("") { b -> "%02x".format(b) } }.toSet()
-    }
-
     // ---------------------------------------------------------------- persistence
 
-    private fun save(release: ReleaseInfo, apk: File) {
+    private fun save(release: ReleaseInfo) {
         prefs.edit()
             .putString(KEY_VERSION, release.version).putString(KEY_TITLE, release.title).putString(KEY_NOTES, release.notes)
-            .putString(KEY_PAGE, release.pageUrl).putString(KEY_URL, release.apkUrl).putLong(KEY_SIZE, release.apkSize)
-            .putString(KEY_APK, apk.path)
+            .putString(KEY_PAGE, release.pageUrl)
             .apply()
     }
 
-    private fun restoreReady() {
+    private fun restoreAvailable() {
         val version = prefs.getString(KEY_VERSION, null) ?: return
-        val apk = File(prefs.getString(KEY_APK, null) ?: return)
-        if (!isNewer(version, currentVersion) || !apk.exists()) { cleanup(); return }
-        _state.value = UpdateState.Ready(
+        if (!isNewer(version, currentVersion)) { forget(); return }
+        _state.value = UpdateState.Available(
             ReleaseInfo(
                 version, prefs.getString(KEY_TITLE, null) ?: "Dayline $version", prefs.getString(KEY_NOTES, null).orEmpty(),
-                prefs.getString(KEY_PAGE, null).orEmpty(), prefs.getString(KEY_URL, null).orEmpty(), prefs.getLong(KEY_SIZE, -1L),
+                prefs.getString(KEY_PAGE, null).orEmpty(),
             ),
-            apk,
         )
     }
 
-    /** Forget a downloaded update once this install is as new (e.g. right after updating). */
-    private fun cleanup() {
-        File(context.cacheDir, "updates").listFiles()?.forEach { it.delete() }
-        prefs.edit().remove(KEY_VERSION).remove(KEY_APK).remove(KEY_TITLE).remove(KEY_NOTES).remove(KEY_PAGE).remove(KEY_URL).remove(KEY_SIZE).apply()
+    /** Forget a found update once this install is as new (e.g. right after updating). */
+    private fun forget() {
+        prefs.edit().remove(KEY_VERSION).remove(KEY_TITLE).remove(KEY_NOTES).remove(KEY_PAGE)
+            .remove("apk").remove("url").remove("size").apply()
     }
 
     // ---------------------------------------------------------------- notification
 
-    private fun notifyReady(release: ReleaseInfo) {
+    private fun notifyAvailable(release: ReleaseInfo) {
         if (prefs.getString(KEY_NOTIFIED, null) == release.version) return
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -255,7 +185,7 @@ class UpdateManager @Inject constructor(@ApplicationContext private val context:
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, "App updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "When a new version of Dayline is ready to install"
+                description = "When a new version of Dayline is out"
             },
         )
         val open = PendingIntent.getActivity(
@@ -264,17 +194,14 @@ class UpdateManager @Inject constructor(@ApplicationContext private val context:
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val apk = File(prefs.getString(KEY_APK, null) ?: return)
-        val install = runCatching {
-            PendingIntent.getActivity(context, 7002, installIntent(apk), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        }.getOrNull() ?: open
+        val page = PendingIntent.getActivity(context, 7002, pageIntent(release), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_dayline)
-            .setContentTitle("Dayline ${release.version} is ready")
-            .setContentText("Tap Update to install the new version.")
-            .setStyle(NotificationCompat.BigTextStyle().bigText(summary(release.notes).ifBlank { "Tap Update to install the new version." }))
+            .setContentTitle("Dayline ${release.version} is out")
+            .setContentText("Tap Update to download it from GitHub.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(summary(release.notes).ifBlank { "Tap Update to download it from GitHub." }))
             .setContentIntent(open)
-            .addAction(0, "Update", install)
+            .addAction(0, "Update", page)
             .setAutoCancel(true)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, n) }
@@ -291,9 +218,6 @@ class UpdateManager @Inject constructor(@ApplicationContext private val context:
         private const val KEY_TITLE = "title"
         private const val KEY_NOTES = "notes"
         private const val KEY_PAGE = "page"
-        private const val KEY_URL = "url"
-        private const val KEY_SIZE = "size"
-        private const val KEY_APK = "apk"
         private const val KEY_NOTIFIED = "notified"
 
         /** "1.10.0" > "1.9.2"; missing parts count as 0. */
@@ -341,7 +265,7 @@ class UpdateWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         if (!updates.supported) return Result.success()
-        return when (updates.checkAndDownload(notify = true)) {
+        return when (updates.check(notify = true)) {
             is UpdateState.Failed -> if (runAttemptCount < 2) Result.retry() else Result.success()
             else -> Result.success()
         }

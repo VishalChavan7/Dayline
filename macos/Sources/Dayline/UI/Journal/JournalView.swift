@@ -43,23 +43,25 @@ struct JournalView: View {
         GeometryReader { geo in
             let columns = shown(width: geo.size.width)
             HStack(spacing: 0) {
-                if columns >= 2 {
-                    timeline(ui)
-                        .frame(width: 380)
-                    Divider()
-                }
+                timeline(ui)
+                    .frame(width: 380)
+                    .slidingPane(width: 380, shown: columns >= 2)
                 JournalEditorHost(ui: ui, shownColumns: columns)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .background(SwipeCatcher { leftward in
                 if leftward { ui.collapse(services.nav, shown: columns) } else { ui.expand(services.nav) }
             })
+            .onAppear { ui.capacity = capacity(width: geo.size.width) }
+            .onChange(of: capacity(width: geo.size.width)) { _, c in ui.capacity = c }
         }
         .navigationTitle("Journal")
     }
 
     /// 2 = timeline and entry, 1 = the entry alone (chosen, or when the window is too narrow for both).
-    func shown(width: CGFloat) -> Int { ui.layout >= 2 && width - 380 >= 400 ? 2 : 1 }
+    func shown(width: CGFloat) -> Int { min(ui.layout, capacity(width: width)) }
+    /// Columns there's room for at this width.
+    func capacity(width: CGFloat) -> Int { width - 380 >= 400 ? 2 : 1 }
 
     func newEntry(_ ui: NotesUI, prompt: String? = nil) {
         services.journal.prompt = prompt
